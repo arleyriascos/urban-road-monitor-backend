@@ -25,6 +25,20 @@ cd urban-road-monitor-backend
 npm install
 ```
 
+## Variables de entorno
+
+1. Copia `.env.example` y renómbralo a `.env`.
+2. Completa `DATABASE_URL` con la cadena de conexión del usuario `app_user` de la rama `development` de Neon.
+
+El archivo `.env` está en `.gitignore` y **nunca** se sube a GitHub. Si falta una variable o tiene un formato inválido, el servidor no arranca y muestra cuál es el problema.
+
+| Variable       | Descripción                                             |
+| -------------- | ------------------------------------------------------- |
+| `NODE_ENV`     | `development`, `production` o `test`                    |
+| `PORT`         | Puerto del servidor (por defecto 3000)                  |
+| `DATABASE_URL` | Conexión a PostgreSQL en Neon con el usuario `app_user` |
+| `CORS_ORIGIN`  | Orígenes del frontend permitidos, separados por comas   |
+
 ## Scripts
 
 | Comando             | Qué hace                                                               |
