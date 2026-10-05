@@ -69,6 +69,7 @@ src/
 ├── config/            Variables de entorno y conexión única a la base (Singleton)
 ├── controllers/       Reciben la petición y responden con el código HTTP correcto
 ├── errors/            Errores de la aplicación con su código HTTP
+├── middlewares/       CORS, rutas inexistentes (404) y manejo de errores
 ├── repositories/      Acceso a la base de datos con Prisma (patrón Repository)
 ├── routes/            Rutas de la API REST
 ├── services/          Lógica de negocio

@@ -1,4 +1,7 @@
 import express from 'express';
+import { corsMiddleware } from './middlewares/cors.js';
+import { errorHandler } from './middlewares/error-handler.js';
+import { notFoundHandler } from './middlewares/not-found.js';
 import { apiRouter } from './routes/index.js';
 
 /**
@@ -8,6 +11,7 @@ import { apiRouter } from './routes/index.js';
 export function createApp() {
   const app = express();
 
+  app.use(corsMiddleware);
   app.use(express.json());
 
   app.get('/', (_req, res) => {
@@ -20,6 +24,10 @@ export function createApp() {
   });
 
   app.use('/api', apiRouter);
+
+  // Must be registered after all routes.
+  app.use(notFoundHandler);
+  app.use(errorHandler);
 
   return app;
 }
