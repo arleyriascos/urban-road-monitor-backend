@@ -1,0 +1,21 @@
+# Render Blueprint: describes the web service so it can be created from this file.
+# Secret values (sync: false) are asked for in the Render dashboard, never stored here.
+services:
+  - type: web
+    name: urban-road-monitor-backend
+    runtime: node
+    region: virginia
+    plan: free
+    branch: main
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: '24'
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false

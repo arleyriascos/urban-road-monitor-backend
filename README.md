@@ -82,6 +82,26 @@ src/
 └── server.ts          Punto de entrada: inicia el servidor
 ```
 
+## Despliegue en Render
+
+El servicio se describe en `render.yaml` (región Virginia, plan gratuito, Node 24).
+
+| Configuración     | Valor                                   |
+| ----------------- | --------------------------------------- |
+| Build Command     | `npm ci --include=dev && npm run build` |
+| Start Command     | `npm start`                             |
+| Health Check Path | `/api/health`                           |
+
+Variables que se configuran en el panel de Render (no van en el repositorio):
+
+| Variable       | Valor                                           |
+| -------------- | ----------------------------------------------- |
+| `DATABASE_URL` | Conexión de `app_user` a la rama `main` de Neon |
+| `CORS_ORIGIN`  | URL del frontend en Vercel                      |
+
+Cada vez que se integra un pull request a `main`, Render vuelve a desplegar automáticamente.
+En el plan gratuito el servicio se duerme tras unos minutos sin uso: la primera petición después de eso tarda unos segundos.
+
 ## Convenciones
 
 - Código, comentarios, rutas y claves JSON en inglés; documentación en español.
