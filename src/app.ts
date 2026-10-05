@@ -1,4 +1,8 @@
 import express from 'express';
+import { corsMiddleware } from './middlewares/cors.js';
+import { errorHandler } from './middlewares/error-handler.js';
+import { notFoundHandler } from './middlewares/not-found.js';
+import { apiRouter } from './routes/index.js';
 
 /**
  * Creates and configures the Express application.
@@ -7,6 +11,7 @@ import express from 'express';
 export function createApp() {
   const app = express();
 
+  app.use(corsMiddleware);
   app.use(express.json());
 
   app.get('/', (_req, res) => {
@@ -14,8 +19,16 @@ export function createApp() {
       name: 'Urban Road Monitor API',
       description: 'Pothole detection and route recommendation on urban roads',
       status: 'active',
+      docs: '/api/docs',
+      endpoints: ['/api/health', '/api/hello'],
     });
   });
+
+  app.use('/api', apiRouter);
+
+  // Must be registered after all routes.
+  app.use(notFoundHandler);
+  app.use(errorHandler);
 
   return app;
 }
