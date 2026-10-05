@@ -50,13 +50,30 @@ El archivo `.env` está en `.gitignore` y **nunca** se sube a GitHub. Si falta u
 | `npm run lint`      | Revisa el código con ESLint                                            |
 | `npm run format`    | Da formato al código con Prettier                                      |
 
+## Endpoints
+
+| Método | Ruta          | Respuesta                                                                    |
+| ------ | ------------- | ---------------------------------------------------------------------------- |
+| GET    | `/`           | Estado general de la API                                                     |
+| GET    | `/api/health` | Estado del servidor y de la base de datos (200 si está conectada, 503 si no) |
+| GET    | `/api/hello`  | "Hello World" con la confirmación de que la base de datos respondió          |
+
 ## Estructura
 
+Arquitectura por capas, siguiendo el diagrama del profesor: rutas → controladores → servicios → repositorios → base de datos.
+
 ```
-database/       Scripts SQL, diagrama entidad-relación y su README
+database/              Scripts SQL, diagrama entidad-relación y su README
+prisma/                Esquema de Prisma (generado con npm run db:pull)
 src/
-├── app.ts      Configuración de la aplicación Express
-└── server.ts   Punto de entrada: inicia el servidor
+├── config/            Variables de entorno y conexión única a la base (Singleton)
+├── controllers/       Reciben la petición y responden con el código HTTP correcto
+├── errors/            Errores de la aplicación con su código HTTP
+├── repositories/      Acceso a la base de datos con Prisma (patrón Repository)
+├── routes/            Rutas de la API REST
+├── services/          Lógica de negocio
+├── app.ts             Configuración de Express
+└── server.ts          Punto de entrada: inicia el servidor
 ```
 
 ## Convenciones

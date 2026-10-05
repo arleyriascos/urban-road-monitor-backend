@@ -1,4 +1,5 @@
 import express from 'express';
+import { apiRouter } from './routes/index.js';
 
 /**
  * Creates and configures the Express application.
@@ -14,8 +15,11 @@ export function createApp() {
       name: 'Urban Road Monitor API',
       description: 'Pothole detection and route recommendation on urban roads',
       status: 'active',
+      endpoints: ['/api/health', '/api/hello'],
     });
   });
+
+  app.use('/api', apiRouter);
 
   return app;
 }
