@@ -19,6 +19,7 @@ export function createApp() {
       name: 'Urban Road Monitor API',
       description: 'Pothole detection and route recommendation on urban roads',
       status: 'active',
+      docs: '/api/docs',
       endpoints: ['/api/health', '/api/hello'],
     });
   });

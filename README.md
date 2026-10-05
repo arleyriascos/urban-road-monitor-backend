@@ -52,11 +52,15 @@ El archivo `.env` está en `.gitignore` y **nunca** se sube a GitHub. Si falta u
 
 ## Endpoints
 
-| Método | Ruta          | Respuesta                                                                    |
-| ------ | ------------- | ---------------------------------------------------------------------------- |
-| GET    | `/`           | Estado general de la API                                                     |
-| GET    | `/api/health` | Estado del servidor y de la base de datos (200 si está conectada, 503 si no) |
-| GET    | `/api/hello`  | "Hello World" con la confirmación de que la base de datos respondió          |
+| Método | Ruta             | Respuesta                                                                                |
+| ------ | ---------------- | ---------------------------------------------------------------------------------------- |
+| GET    | `/`              | Estado general de la API                                                                 |
+| GET    | `/api/health`    | Estado del servidor y de la base de datos (200 si está conectada, 503 si no)             |
+| GET    | `/api/hello`     | "Hello World" con la confirmación de que la base de datos respondió (503 si no responde) |
+| GET    | `/api/docs`      | Documentación interactiva (Swagger)                                                      |
+| GET    | `/api/docs.json` | Documento OpenAPI en JSON                                                                |
+
+Los errores siempre responden en JSON con la forma `{ "error": { "code", "message" } }`.
 
 ## Estructura
 
@@ -68,6 +72,7 @@ prisma/                Esquema de Prisma (generado con npm run db:pull)
 src/
 ├── config/            Variables de entorno y conexión única a la base (Singleton)
 ├── controllers/       Reciben la petición y responden con el código HTTP correcto
+├── docs/              Documento OpenAPI que muestra Swagger
 ├── errors/            Errores de la aplicación con su código HTTP
 ├── middlewares/       CORS, rutas inexistentes (404) y manejo de errores
 ├── repositories/      Acceso a la base de datos con Prisma (patrón Repository)
