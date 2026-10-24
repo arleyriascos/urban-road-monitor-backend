@@ -13,6 +13,8 @@ Base de datos del proyecto **Detección de Baches y Rutas en Vías Urbanas** (Po
 | `04_seed_data.sql` | Catálogos en español: roles, permisos, severidades, estados, tipos de vía, modelo y parámetros |
 | `er-diagram.png` / `er-diagram.svg` | Diagrama entidad-relación completo |
 | `05_app_user.sql` | Crea el usuario `app_user` con el que se conecta el backend: puede leer y escribir datos, pero no modificar la estructura ni borrar usuarios. Se ejecuta aparte, una vez por entorno |
+| `06_add_segment_geometry.sql` | Migración: agrega a `road_segments` la columna `geometry` con el trazado de cada tramo, para dibujar bien las calles curvas |
+| `07_add_geometry_to_segment_status_view.sql` | Migración: agrega `geometry` a la vista `v_segment_status`, que es la que lee el mapa |
 
 ## Cómo ejecutarlo
 
@@ -27,9 +29,23 @@ Si se modifica un archivo 01 a 04, hay que regenerar `00_run_all.sql` para que i
 
 Después de `00_run_all.sql`, abrir `05_app_user.sql`, reemplazar `CHANGE_ME_STRONG_PASSWORD` por una contraseña larga y ejecutarlo. **Nunca subir a Git el archivo con la contraseña real**: deshacer el cambio antes de hacer commit.
 
+## Migraciones
+
+Los cambios posteriores a la estructura inicial se agregan como archivos numerados (06, 07, ...),
+sin modificar los scripts 01 a 04. Cada migración se ejecuta **una sola vez por entorno** (base
+local, rama `development` y rama `main` de Neon), conectado como dueño de la base (`postgres` en
+local, `neondb_owner` en Neon), y en orden. Si se ejecuta dos veces, PostgreSQL la rechaza sin
+dañar nada.
+
+| Migración | Qué cambia |
+| --- | --- |
+| 06 | `road_segments.geometry` (JSONB): lista de puntos `[latitud, longitud]` desde el nodo inicial hasta el final. Así una calle curva se dibuja con su forma real, mientras el grafo conserva un solo nodo por intersección |
+| 07 | La vista `v_segment_status` incluye `geometry` al final |
+
 ## Volver a crear desde cero
 
-Clic derecho sobre `urban_road_monitor` → **Delete**, crearla de nuevo vacía y ejecutar `00_run_all.sql`.
+Clic derecho sobre `urban_road_monitor` → **Delete**, crearla de nuevo vacía y ejecutar, en orden:
+`00_run_all.sql`, `05_app_user.sql` y las migraciones `06`, `07`, etc.
 
 ## Convenciones
 
