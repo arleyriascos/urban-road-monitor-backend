@@ -16,3 +16,6 @@ Thumbs.db
 
 # Prisma generated client (created by "prisma generate")
 src/generated/
+
+# Downloaded OpenStreetMap data (can be downloaded again)
+data/
