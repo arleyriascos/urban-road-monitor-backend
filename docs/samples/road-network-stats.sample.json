@@ -1,0 +1,42 @@
+{
+  "roads": 16,
+  "segments": 112,
+  "totalLengthKm": 11.26,
+  "segmentsBySeverity": [
+    {
+      "severity": "sin baches",
+      "color": "#22C55E",
+      "count": 90
+    },
+    {
+      "severity": "leve",
+      "color": "#FACC15",
+      "count": 6
+    },
+    {
+      "severity": "moderado",
+      "color": "#F97316",
+      "count": 9
+    },
+    {
+      "severity": "grave",
+      "color": "#DC2626",
+      "count": 7
+    }
+  ],
+  "potholesByStatus": [
+    {
+      "status": "sin confirmar",
+      "count": 4
+    },
+    {
+      "status": "confirmado",
+      "count": 18
+    },
+    {
+      "status": "reparado",
+      "count": 2
+    }
+  ],
+  "lastPotholeDetectedAt": "2026-10-24T11:13:20.362Z"
+}

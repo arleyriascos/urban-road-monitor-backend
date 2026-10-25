@@ -4,3 +4,4 @@ src/generated/
 package-lock.json
 database/
 data/
+docs/samples/
