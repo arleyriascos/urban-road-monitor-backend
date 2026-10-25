@@ -102,6 +102,15 @@ Variables que se configuran en el panel de Render (no van en el repositorio):
 Cada `push` a `main` vuelve a desplegar el servicio si tiene activado Auto-Deploy; si no, se despliega con **Manual Deploy** desde el panel de Render.
 En el plan gratuito el servicio se duerme tras unos minutos sin uso: la primera petición después de eso tarda unos segundos.
 
+## Equipo y responsabilidades
+
+| Integrante    | Responsabilidad                                            |
+| ------------- | ---------------------------------------------------------- |
+| Arley Riascos | Todos los commits del backend y de la implementación de IA |
+| Kevin Basante | Todos los commits del frontend                             |
+
+Los dos trabajan juntos en videollamada para que ambos conozcan todo el proyecto. Los primeros commits de cada repositorio se hicieron en conjunto y llevan la línea `Co-authored-by:`.
+
 ## Convenciones
 
 - Código, comentarios, rutas y claves JSON en inglés; documentación en español.
