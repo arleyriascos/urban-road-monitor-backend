@@ -1,4 +1,5 @@
 import express from 'express';
+import { compressionMiddleware } from './middlewares/compression.js';
 import { corsMiddleware } from './middlewares/cors.js';
 import { errorHandler } from './middlewares/error-handler.js';
 import { notFoundHandler } from './middlewares/not-found.js';
@@ -12,6 +13,7 @@ export function createApp() {
   const app = express();
 
   app.use(corsMiddleware);
+  app.use(compressionMiddleware);
   app.use(express.json());
 
   app.get('/', (_req, res) => {
