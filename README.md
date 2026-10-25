@@ -41,28 +41,32 @@ El archivo `.env` está en `.gitignore` y **nunca** se sube a GitHub. Si falta u
 
 ## Scripts
 
-| Comando                | Qué hace                                                                         |
-| ---------------------- | -------------------------------------------------------------------------------- |
-| `npm run dev`          | Inicia el servidor en modo desarrollo y lo reinicia al guardar cambios           |
-| `npm run build`        | Compila TypeScript a JavaScript en `dist/` (sin las pruebas)                     |
-| `npm start`            | Inicia el servidor compilado (lo usa Render)                                     |
-| `npm run typecheck`    | Revisa los tipos sin compilar                                                    |
-| `npm run lint`         | Revisa el código con ESLint                                                      |
-| `npm run format`       | Da formato al código con Prettier                                                |
-| `npm test`             | Ejecuta las pruebas unitarias con Vitest                                         |
-| `npm run test:watch`   | Ejecuta las pruebas y las repite al guardar cambios                              |
-| `npm run db:pull`      | Lee las tablas de la base de datos y actualiza `prisma/schema.prisma`            |
-| `npm run import:roads` | Importa la red vial de Pasto desde OpenStreetMap (ver `docs/IMPORTACION-OSM.md`) |
+| Comando                 | Qué hace                                                                           |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| `npm run dev`           | Inicia el servidor en modo desarrollo y lo reinicia al guardar cambios             |
+| `npm run build`         | Compila TypeScript a JavaScript en `dist/` (sin las pruebas)                       |
+| `npm start`             | Inicia el servidor compilado (lo usa Render)                                       |
+| `npm run typecheck`     | Revisa los tipos sin compilar                                                      |
+| `npm run lint`          | Revisa el código con ESLint                                                        |
+| `npm run format`        | Da formato al código con Prettier                                                  |
+| `npm test`              | Ejecuta las pruebas unitarias con Vitest                                           |
+| `npm run test:watch`    | Ejecuta las pruebas y las repite al guardar cambios                                |
+| `npm run db:pull`       | Lee las tablas de la base de datos y actualiza `prisma/schema.prisma`              |
+| `npm run import:roads`  | Importa la red vial de Pasto desde OpenStreetMap (ver `docs/IMPORTACION-OSM.md`)   |
+| `npm run seed:potholes` | Crea baches de prueba solo en la rama development (ver `docs/BACHES-DE-PRUEBA.md`) |
 
 ## Endpoints
 
-| Método | Ruta             | Respuesta                                                                                |
-| ------ | ---------------- | ---------------------------------------------------------------------------------------- |
-| GET    | `/`              | Estado general de la API                                                                 |
-| GET    | `/api/health`    | Estado del servidor y de la base de datos (200 si está conectada, 503 si no)             |
-| GET    | `/api/hello`     | "Hello World" con la confirmación de que la base de datos respondió (503 si no responde) |
-| GET    | `/api/docs`      | Documentación interactiva (Swagger)                                                      |
-| GET    | `/api/docs.json` | Documento OpenAPI en JSON                                                                |
+| Método | Ruta                      | Respuesta                                                                                |
+| ------ | ------------------------- | ---------------------------------------------------------------------------------------- |
+| GET    | `/`                       | Estado general de la API                                                                 |
+| GET    | `/api/health`             | Estado del servidor y de la base de datos (200 si está conectada, 503 si no)             |
+| GET    | `/api/hello`              | "Hello World" con la confirmación de que la base de datos respondió (503 si no responde) |
+| GET    | `/api/docs`               | Documentación interactiva (Swagger)                                                      |
+| GET    | `/api/docs.json`          | Documento OpenAPI en JSON                                                                |
+| GET    | `/api/road-segments`      | Todas las calles como GeoJSON, con el color de cada tramo (ver `docs/API-MAPA.md`)       |
+| GET    | `/api/potholes`           | Los baches como GeoJSON; `?includeRepaired=true` incluye los reparados                   |
+| GET    | `/api/road-network/stats` | Totales y leyenda del mapa                                                               |
 
 Los errores siempre responden en JSON con la forma `{ "error": { "code", "message" } }`.
 
@@ -80,11 +84,13 @@ src/
 ├── controllers/       Reciben la petición y responden con el código HTTP correcto
 ├── docs/              Documento OpenAPI que muestra Swagger
 ├── errors/            Errores de la aplicación con su código HTTP
+├── geojson/           Tipos GeoJSON y conversión de coordenadas para el mapa
 ├── middlewares/       CORS, rutas inexistentes (404) y manejo de errores
 ├── repositories/      Acceso a la base de datos con Prisma (patrón Repository)
 ├── osm/               Importación de la red vial: consulta, lectura, tramos e informe
 ├── routes/            Rutas de la API REST
 ├── scripts/           Comandos que se ejecutan a mano, como import-roads
+├── seed/              Baches de prueba: generador, corredores, plan y protecciones
 ├── services/          Lógica de negocio
 ├── app.ts             Configuración de Express
 └── server.ts          Punto de entrada: inicia el servidor
