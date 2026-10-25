@@ -1,3 +1,5 @@
+import { mapPaths, mapSchemas, mapTags } from './map-openapi.js';
+
 /**
  * OpenAPI 3.1 description of the API, rendered by Swagger UI at /api/docs.
  * Every new endpoint must be documented here when it is created.
@@ -26,8 +28,9 @@ export const openApiDocument = {
       'REST API for automatic pothole detection and damage-aware route recommendation on the urban roads of Pasto, Colombia.',
   },
   servers: [{ url: '/', description: 'Current server' }],
-  tags: [{ name: 'Health', description: 'Server and database status' }],
+  tags: [{ name: 'Health', description: 'Server and database status' }, ...mapTags],
   paths: {
+    ...mapPaths,
     '/api/health': {
       get: {
         tags: ['Health'],
@@ -69,6 +72,7 @@ export const openApiDocument = {
   },
   components: {
     schemas: {
+      ...mapSchemas,
       Error: errorSchema,
       HealthReport: {
         type: 'object',
