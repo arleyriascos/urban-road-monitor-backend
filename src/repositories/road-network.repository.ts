@@ -1,3 +1,4 @@
+import { describeDatabaseTarget } from '../config/database-target.js';
 import { prisma } from '../config/database.js';
 import { env } from '../config/env.js';
 import { ROAD_TYPE_TAGS } from '../osm/config.js';
@@ -54,11 +55,7 @@ export class RoadNetworkRepository implements RoadNetworkStore {
   constructor(private readonly databaseUrl: string = env.DATABASE_URL) {}
 
   describeTarget(): TargetDescription {
-    const url = new URL(this.databaseUrl);
-    return {
-      host: url.port ? `${url.hostname}:${url.port}` : url.hostname,
-      database: url.pathname.replace(/^\//, ''),
-    };
+    return describeDatabaseTarget(this.databaseUrl);
   }
 
   async save(network: NetworkDraft): Promise<SaveSummary> {

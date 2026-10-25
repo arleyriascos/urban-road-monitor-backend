@@ -1,3 +1,4 @@
+import type { TargetDescription } from '../config/database-target.js';
 import { buildNetwork } from '../osm/segmentize.js';
 import type { BoundingBox } from '../osm/config.js';
 import type { LoadedOverpassData } from '../osm/overpass-client.js';
@@ -5,10 +6,7 @@ import { parseOverpassResponse } from '../osm/parse.js';
 import { formatImportReport, type SaveSummary } from '../osm/report.js';
 import type { NetworkDraft } from '../osm/types.js';
 
-export interface TargetDescription {
-  host: string;
-  database: string;
-}
+export type { TargetDescription };
 
 /** Where the road network is saved. The real one writes to PostgreSQL. */
 export interface RoadNetworkStore {
