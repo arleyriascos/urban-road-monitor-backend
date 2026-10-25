@@ -99,11 +99,13 @@ Variables que se configuran en el panel de Render (no van en el repositorio):
 | `DATABASE_URL` | Conexión de `app_user` a la rama `main` de Neon |
 | `CORS_ORIGIN`  | URL del frontend en Vercel                      |
 
-Cada vez que se integra un pull request a `main`, Render vuelve a desplegar automáticamente.
+Cada `push` a `main` vuelve a desplegar el servicio si tiene activado Auto-Deploy; si no, se despliega con **Manual Deploy** desde el panel de Render.
 En el plan gratuito el servicio se duerme tras unos minutos sin uso: la primera petición después de eso tarda unos segundos.
 
 ## Convenciones
 
 - Código, comentarios, rutas y claves JSON en inglés; documentación en español.
-- Cada tarea se trabaja en una rama y entra a `main` mediante un pull request revisado por el otro integrante.
-- Los commits hechos en conjunto incluyen la línea `Co-authored-by:`.
+- Todo se trabaja directo en `main`, sin ramas ni pull requests (indicación del profesor). Antes de empezar y antes de cada `push` se hace `git pull`.
+- Commits pequeños, uno por cambio con sentido, con el mensaje en inglés y prefijos convencionales: `feat`, `fix`, `test`, `docs`, `chore`, `refactor`, `perf`, `style`.
+- Cada integrante hace sus commits con su propia cuenta de GitHub. Solo los commits hechos en conjunto incluyen la línea `Co-authored-by:`.
+- Antes de cada commit se ejecutan `npm run typecheck`, `npm run lint` y `npm test`.
