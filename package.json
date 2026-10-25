@@ -21,7 +21,8 @@
     "prisma:generate": "prisma generate",
     "test": "vitest run",
     "test:watch": "vitest",
-    "import:roads": "tsx --env-file-if-exists=.env src/scripts/import-roads.ts"
+    "import:roads": "tsx --env-file-if-exists=.env src/scripts/import-roads.ts",
+    "seed:potholes": "tsx --env-file-if-exists=.env src/scripts/seed-potholes.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.0",
