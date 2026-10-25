@@ -19,7 +19,7 @@
     "format:check": "prettier --check .",
     "db:pull": "prisma db pull",
     "prisma:generate": "prisma generate",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
