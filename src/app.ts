@@ -22,7 +22,13 @@ export function createApp() {
       description: 'Pothole detection and route recommendation on urban roads',
       status: 'active',
       docs: '/api/docs',
-      endpoints: ['/api/health', '/api/hello'],
+      endpoints: [
+        '/api/health',
+        '/api/hello',
+        '/api/road-segments',
+        '/api/potholes',
+        '/api/road-network/stats',
+      ],
     });
   });
 
