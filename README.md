@@ -41,14 +41,18 @@ El archivo `.env` está en `.gitignore` y **nunca** se sube a GitHub. Si falta u
 
 ## Scripts
 
-| Comando             | Qué hace                                                               |
-| ------------------- | ---------------------------------------------------------------------- |
-| `npm run dev`       | Inicia el servidor en modo desarrollo y lo reinicia al guardar cambios |
-| `npm run build`     | Compila TypeScript a JavaScript en `dist/`                             |
-| `npm start`         | Inicia el servidor compilado (lo usa Render)                           |
-| `npm run typecheck` | Revisa los tipos sin compilar                                          |
-| `npm run lint`      | Revisa el código con ESLint                                            |
-| `npm run format`    | Da formato al código con Prettier                                      |
+| Comando                | Qué hace                                                                         |
+| ---------------------- | -------------------------------------------------------------------------------- |
+| `npm run dev`          | Inicia el servidor en modo desarrollo y lo reinicia al guardar cambios           |
+| `npm run build`        | Compila TypeScript a JavaScript en `dist/` (sin las pruebas)                     |
+| `npm start`            | Inicia el servidor compilado (lo usa Render)                                     |
+| `npm run typecheck`    | Revisa los tipos sin compilar                                                    |
+| `npm run lint`         | Revisa el código con ESLint                                                      |
+| `npm run format`       | Da formato al código con Prettier                                                |
+| `npm test`             | Ejecuta las pruebas unitarias con Vitest                                         |
+| `npm run test:watch`   | Ejecuta las pruebas y las repite al guardar cambios                              |
+| `npm run db:pull`      | Lee las tablas de la base de datos y actualiza `prisma/schema.prisma`            |
+| `npm run import:roads` | Importa la red vial de Pasto desde OpenStreetMap (ver `docs/IMPORTACION-OSM.md`) |
 
 ## Endpoints
 
@@ -67,7 +71,9 @@ Los errores siempre responden en JSON con la forma `{ "error": { "code", "messag
 Arquitectura por capas, siguiendo el diagrama del profesor: rutas → controladores → servicios → repositorios → base de datos.
 
 ```
+data/                  Datos descargados de OpenStreetMap (los ignora Git)
 database/              Scripts SQL, diagrama entidad-relación y su README
+docs/                  Guías de uso, como la importación de la red vial
 prisma/                Esquema de Prisma (generado con npm run db:pull)
 src/
 ├── config/            Variables de entorno y conexión única a la base (Singleton)
@@ -76,7 +82,9 @@ src/
 ├── errors/            Errores de la aplicación con su código HTTP
 ├── middlewares/       CORS, rutas inexistentes (404) y manejo de errores
 ├── repositories/      Acceso a la base de datos con Prisma (patrón Repository)
+├── osm/               Importación de la red vial: consulta, lectura, tramos e informe
 ├── routes/            Rutas de la API REST
+├── scripts/           Comandos que se ejecutan a mano, como import-roads
 ├── services/          Lógica de negocio
 ├── app.ts             Configuración de Express
 └── server.ts          Punto de entrada: inicia el servidor
