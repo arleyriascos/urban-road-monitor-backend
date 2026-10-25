@@ -1,0 +1,101 @@
+{
+  "version": 0.6,
+  "generator": "hand-made sample for unit tests",
+  "elements": [
+    { "type": "node", "id": 999, "lat": 1.2, "lon": -77.2 },
+    {
+      "type": "way",
+      "id": 5001,
+      "nodes": [1001, 1002, 1003, 1004],
+      "geometry": [
+        { "lat": 1.214, "lon": -77.282 },
+        { "lat": 1.214, "lon": -77.281 },
+        { "lat": 1.214, "lon": -77.28 },
+        { "lat": 1.214, "lon": -77.279 }
+      ],
+      "tags": { "highway": "residential", "name": "Calle 18" }
+    },
+    {
+      "type": "way",
+      "id": 5002,
+      "nodes": [2001, 2002, 1002, 2003],
+      "geometry": [
+        { "lat": 1.215, "lon": -77.281 },
+        { "lat": 1.2145, "lon": -77.281 },
+        { "lat": 1.214, "lon": -77.281 },
+        { "lat": 1.213, "lon": -77.281 }
+      ],
+      "tags": { "highway": "secondary", "name": "Carrera 25", "oneway": "yes" }
+    },
+    {
+      "type": "way",
+      "id": 5003,
+      "nodes": [3001, 1003, 3002],
+      "geometry": [
+        { "lat": 1.215, "lon": -77.28 },
+        { "lat": 1.214, "lon": -77.28 },
+        { "lat": 1.213, "lon": -77.28 }
+      ],
+      "tags": { "highway": "tertiary", "name": "Carrera 24", "oneway": "-1" }
+    },
+    {
+      "type": "way",
+      "id": 5004,
+      "nodes": [1004, 4001, 4002, 4003, 1004],
+      "geometry": [
+        { "lat": 1.214, "lon": -77.279 },
+        { "lat": 1.2143, "lon": -77.2787 },
+        { "lat": 1.214, "lon": -77.2784 },
+        { "lat": 1.2137, "lon": -77.2787 },
+        { "lat": 1.214, "lon": -77.279 }
+      ],
+      "tags": { "highway": "residential", "junction": "roundabout" }
+    },
+    {
+      "type": "way",
+      "id": 5005,
+      "nodes": [1001, 7001],
+      "geometry": [
+        { "lat": 1.214, "lon": -77.282 },
+        { "lat": 1.2135, "lon": -77.282 }
+      ],
+      "tags": { "highway": "residential" }
+    },
+    {
+      "type": "way",
+      "id": 5006,
+      "nodes": [6001, 6002],
+      "geometry": [
+        { "lat": 1.22, "lon": -77.27 },
+        { "lat": 1.2205, "lon": -77.27 }
+      ],
+      "tags": { "highway": "service", "access": "private" }
+    },
+    {
+      "type": "way",
+      "id": 5007,
+      "nodes": [6003, 6004],
+      "geometry": [
+        { "lat": 1.21, "lon": -77.27 },
+        { "lat": 1.2105, "lon": -77.27 }
+      ],
+      "tags": { "highway": "service", "access": "private", "motor_vehicle": "yes" }
+    },
+    {
+      "type": "way",
+      "id": 5008,
+      "nodes": [6005, 6006],
+      "geometry": [
+        { "lat": 1.23, "lon": -77.27 },
+        { "lat": 1.2305, "lon": -77.27 }
+      ],
+      "tags": { "highway": "footway" }
+    },
+    {
+      "type": "way",
+      "id": 5009,
+      "nodes": [6007, 6008],
+      "tags": { "highway": "residential" }
+    }
+  ]
+}
