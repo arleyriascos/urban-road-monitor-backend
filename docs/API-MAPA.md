@@ -232,15 +232,23 @@ Un bache (de `GET /api/potholes`):
 
 ## Dibujarlo con Leaflet
 
+El mapa base es **OpenFreeMap**. CARTO ahora exige una clave (sin ella estampa "API KEY REQUIRED" en todo el mapa), y una clave dentro del frontend iría contra la regla de no exponer claves.
+
 `L.geoJSON` entiende GeoJSON y ya invierte el orden `[longitud, latitud]` por su cuenta. Si dibujas a mano con `L.polyline`, hay que invertirlo.
 
 ```ts
-const map = L.map('map', { preferCanvas: true }).setView([1.2136, -77.2811], 14);
+import { maplibreGL } from '@maplibre/maplibre-gl-leaflet';
 
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-  subdomains: 'abcd',
-  maxZoom: 20,
+const map = L.map('map', { renderer: L.canvas({ tolerance: 8 }) }).setView([1.2136, -77.2811], 14);
+
+// Mapa base vectorial de OpenFreeMap: no necesita clave. Requiere WebGL.
+maplibreGL({
+  style: 'https://tiles.openfreemap.org/styles/positron',
+  // El crédito es obligatorio; se pasa así porque el binding ignora la opción "attribution".
+  attributionControl: {
+    customAttribution:
+      '<a href="https://openfreemap.org">OpenFreeMap</a> &copy; OpenMapTiles Data from OpenStreetMap',
+  },
 }).addTo(map);
 
 L.geoJSON(segments, {
@@ -261,7 +269,7 @@ L.geoJSON(potholes, {
 
 ## Lo que hay que tener en cuenta
 
-- **Usa `preferCanvas: true`.** La ciudad completa tiene unos 10.000 tramos. Con el dibujo SVG por defecto, Leaflet se pone lento; con canvas se mueve fluido.
+- **Dibuja con canvas.** La ciudad completa tiene unos 10.000 tramos. Con el dibujo SVG por defecto, Leaflet se pone lento; con el renderizador canvas (`L.canvas({ tolerance: 8 })`) se mueve fluido, y la tolerancia hace que las calles delgadas se puedan tocar en el celular.
 - **El tamaño:** `/api/road-segments` pesa unos 3 MB sin comprimir, pero el servidor lo comprime con gzip (unos 130 KB) y el navegador lo descomprime solo. También envía un `ETag`: si el navegador ya lo tiene y no cambió, el servidor responde 304 sin reenviar nada.
 - **Estados de la pantalla:** el profesor exige mostrar carga, error y resultado. El backend en Render gratuito se duerme tras unos minutos sin uso, y la primera petición puede tardar hasta un minuto: el estado de carga debe aguantar ese tiempo. Los errores llegan como `ApiError` con un `code` (`INVALID_QUERY` con 400, `INTERNAL_ERROR` con 500).
 - **Sentido de las calles:** `isOneway: true` significa que el tránsito va del primer al último punto de la línea. Dibujar flechas es opcional.
