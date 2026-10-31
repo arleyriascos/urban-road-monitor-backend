@@ -20,7 +20,7 @@ async function askConfirmation(target: TargetDescription): Promise<boolean> {
   console.log('\nVas a ESCRIBIR en esta base de datos:');
   console.log(`  Servidor: ${target.host}`);
   console.log(`  Base:     ${target.database}`);
-  console.log('Compara el servidor con el de la rama development en Neon (botón Connect).');
+  console.log('Compara el servidor con el de la rama de Neon que vas a modificar (botón Connect).');
 
   const readline = createInterface({ input: process.stdin, output: process.stdout });
   try {
