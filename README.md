@@ -108,10 +108,10 @@ El servicio se describe en `render.yaml` (región Virginia, plan gratuito, Node 
 
 Variables que se configuran en el panel de Render (no van en el repositorio):
 
-| Variable       | Valor                                           |
-| -------------- | ----------------------------------------------- |
-| `DATABASE_URL` | Conexión de `app_user` a la rama `main` de Neon |
-| `CORS_ORIGIN`  | URL del frontend en Vercel                      |
+| Variable       | Valor                                                                                         |
+| -------------- | --------------------------------------------------------------------------------------------- |
+| `DATABASE_URL` | Conexión de `app_user` a la rama `production` de Neon (en tu computador se usa `development`) |
+| `CORS_ORIGIN`  | URL del frontend en Vercel                                                                    |
 
 Cada `push` a `main` vuelve a desplegar el servicio si tiene activado Auto-Deploy; si no, se despliega con **Manual Deploy** desde el panel de Render.
 En el plan gratuito el servicio se duerme tras unos minutos sin uso: la primera petición después de eso tarda unos segundos.

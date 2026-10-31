@@ -33,7 +33,7 @@ Después de `00_run_all.sql`, abrir `05_app_user.sql`, reemplazar `CHANGE_ME_STR
 
 Los cambios posteriores a la estructura inicial se agregan como archivos numerados (06, 07, ...),
 sin modificar los scripts 01 a 04. Cada migración se ejecuta **una sola vez por entorno** (base
-local, rama `development` y rama `main` de Neon), conectado como dueño de la base (`postgres` en
+local, rama `development` y rama `production` de Neon), conectado como dueño de la base (`postgres` en
 local, `urban_road_monitor_owner` en Neon), y en orden. Si se ejecuta dos veces, PostgreSQL la rechaza sin
 dañar nada.
 
