@@ -2,7 +2,7 @@
 
 El comando `npm run seed:potholes` crea baches **inventados** en la base de datos para ver los colores en el mapa y, más adelante, comprobar que las rutas esquivan las calles dañadas. Hasta que haya detecciones reales, es la única forma de tener un mapa con baches.
 
-**Solo para la rama `development` de Neon.** Los baches de prueba nunca deben llegar a `main`, porque esa base es la que ve el profesor.
+**Solo para la rama `development` de Neon.** Los baches de prueba nunca deben llegar a `production`, porque esa base es la que ve el profesor.
 
 ## Qué crea
 
