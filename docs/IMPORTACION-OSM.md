@@ -94,6 +94,26 @@ npm run import:roads -- --dry-run --bbox 1.19,-77.31,1.24,-77.25
 
 Para obtener coordenadas, haz clic derecho sobre el mapa en Google Maps o en openstreetmap.org y copia la latitud y la longitud. Cada rectángulo distinto se guarda en su propio archivo.
 
+## Importar a la rama production
+
+La rama `production` de Neon (la marcada como Default) es la que usa Render, es decir, la que ve el profesor. Se importa igual que en `development`, pero con un archivo aparte, para que tu `.env` siga apuntando a `development`.
+
+1. En Neon abre la rama **production**, pulsa **Connect**, elige la base `urban_road_monitor` y el rol `app_user`, y deja **Connection pooling** apagado. Pulsa **Show password** y luego **Copy snippet**.
+2. Crea en la raíz del repositorio un archivo `.env.main` con una sola línea: `DATABASE_URL=` seguido de la cadena copiada. Cambia el final de la cadena por `?sslmode=verify-full`. Git ignora ese archivo: comprueba con `git status` que no aparezca.
+3. En pgAdmin, en el servidor de `production`, comprueba que la columna `geometry` de `road_segments` exista y que la tabla esté vacía.
+4. Importa con el archivo aparte:
+
+   ```powershell
+   npx tsx --env-file=.env.main src/scripts/import-roads.ts
+   ```
+
+   El comando usa los datos ya descargados. Compara el servidor que muestra la confirmación con el host de `production` y escribe `si` solo si coincide.
+
+5. Comprueba que Render lea esa rama: `/api/road-network/stats` del backend desplegado debe mostrar los mismos totales y **ningún bache**. Si muestra baches de prueba, la `DATABASE_URL` de Render apunta a `development`: corrígela en Render, **Environment**, con la misma cadena de `.env.main`.
+6. Borra el archivo con `Remove-Item .env.main`. Si copiaste la cadena al portapapeles, copia cualquier otro texto para sobrescribirla, porque incluye la contraseña.
+
+Nunca ejecutes `npm run seed:potholes` contra `production`: el script lo impide mientras `SEED_ALLOWED_HOST` sea el host de `development`.
+
 ## Si algo falla
 
 | Mensaje                                                                | Qué hacer                                                                          |
