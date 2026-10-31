@@ -270,9 +270,9 @@ L.geoJSON(potholes, {
 ## Lo que hay que tener en cuenta
 
 - **Dibuja con canvas.** La ciudad completa tiene unos 10.000 tramos. Con el dibujo SVG por defecto, Leaflet se pone lento; con el renderizador canvas (`L.canvas({ tolerance: 8 })`) se mueve fluido, y la tolerancia hace que las calles delgadas se puedan tocar en el celular.
-- **El tamaño:** `/api/road-segments` pesa unos 3 MB sin comprimir, pero el servidor lo comprime con gzip (unos 130 KB) y el navegador lo descomprime solo. También envía un `ETag`: si el navegador ya lo tiene y no cambió, el servidor responde 304 sin reenviar nada.
+- **El tamaño:** `/api/road-segments` pesa unos 3 MB sin comprimir, pero el servidor lo comprime con gzip (unos 340 KB con la red real de Pasto) y el navegador lo descomprime solo. También envía un `ETag`: si el navegador ya lo tiene y no cambió, el servidor responde 304 sin reenviar nada.
 - **Estados de la pantalla:** el profesor exige mostrar carga, error y resultado. El backend en Render gratuito se duerme tras unos minutos sin uso, y la primera petición puede tardar hasta un minuto: el estado de carga debe aguantar ese tiempo. Los errores llegan como `ApiError` con un `code` (`INVALID_QUERY` con 400, `INTERNAL_ERROR` con 500).
 - **Sentido de las calles:** `isOneway: true` significa que el tránsito va del primer al último punto de la línea. Dibujar flechas es opcional.
-- **Qué datos hay en cada rama:** la base `development` tendrá baches de prueba. La base `main`, que usa Render, tendrá las calles reales y **ningún bache** hasta que haya detecciones reales, así que en producción el mapa se verá todo verde.
+- **Qué datos hay en cada rama:** la base `development` tendrá baches de prueba. La base `production` (la rama principal de Neon), que usa Render, tiene las calles reales y **ningún bache** hasta que haya detecciones reales, así que en producción el mapa se verá todo verde.
 - **Colores:** usa siempre el campo `color` de la respuesta. Hoy son `#22C55E` (sin baches), `#FACC15` (leve), `#F97316` (moderado) y `#DC2626` (grave).
 - **Cuándo pedir:** `road-segments` y `road-network/stats` al abrir el mapa. `potholes` también al abrir; no hace falta pedirlos de nuevo al mover el mapa, porque se devuelve toda la ciudad.
