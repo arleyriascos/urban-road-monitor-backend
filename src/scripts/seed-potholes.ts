@@ -21,7 +21,7 @@ async function askConfirmation(target: TargetDescription): Promise<boolean> {
   console.log('\nVas a REEMPLAZAR TODOS los baches de esta base de datos:');
   console.log(`  Servidor: ${target.host}`);
   console.log(`  Base:     ${target.database}`);
-  console.log('Estos baches son inventados. Nunca deben crearse en la rama main.');
+  console.log('Estos baches son inventados. Nunca deben crearse en la rama production.');
 
   const readline = createInterface({ input: process.stdin, output: process.stdout });
   try {
