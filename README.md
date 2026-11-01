@@ -32,12 +32,21 @@ npm install
 
 El archivo `.env` está en `.gitignore` y **nunca** se sube a GitHub. Si falta una variable o tiene un formato inválido, el servidor no arranca y muestra cuál es el problema.
 
-| Variable       | Descripción                                             |
-| -------------- | ------------------------------------------------------- |
-| `NODE_ENV`     | `development`, `production` o `test`                    |
-| `PORT`         | Puerto del servidor (por defecto 3000)                  |
-| `DATABASE_URL` | Conexión a PostgreSQL en Neon con el usuario `app_user` |
-| `CORS_ORIGIN`  | Orígenes del frontend permitidos, separados por comas   |
+| Variable         | Descripción                                                                                        |
+| ---------------- | -------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`       | `development`, `production` o `test`                                                               |
+| `PORT`           | Puerto del servidor (por defecto 3000)                                                             |
+| `DATABASE_URL`   | Conexión a PostgreSQL en Neon con el usuario `app_user`                                            |
+| `CORS_ORIGIN`    | Orígenes del frontend permitidos, separados por comas                                              |
+| `INTERNAL_TOKEN` | Opcional. Token compartido con el servicio de IA (mínimo 32 caracteres); vacío apaga `/internal/*` |
+
+Para generar `INTERNAL_TOKEN` (64 caracteres aleatorios):
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+El mismo valor va en el backend y en el servicio de IA. Nunca se escribe en `.env.example`, en un commit ni en un chat.
 
 ## Scripts
 
@@ -70,6 +79,19 @@ El archivo `.env` está en `.gitignore` y **nunca** se sube a GitHub. Si falta u
 
 Los errores siempre responden en JSON con la forma `{ "error": { "code", "message" } }`.
 
+### Endpoint interno
+
+Solo lo usa el servicio de IA para calcular rutas. No está en la lista de `GET /` y necesita el encabezado `Authorization: Bearer <INTERNAL_TOKEN>`.
+
+| Método | Ruta              | Respuesta                                                                                               |
+| ------ | ----------------- | ------------------------------------------------------------------------------------------------------- |
+| GET    | `/internal/graph` | Red vial como grafo: la `version`, los nodos que usa algún tramo y todos los tramos, ordenados por `id` |
+
+- **Sin `INTERNAL_TOKEN` configurado** responde 404, igual que una ruta que no existe. **Con un token ausente o incorrecto** responde 401, siempre con el mismo mensaje. Si la base de datos no responde, 503.
+- **`version`** es un MD5 de los datos que usa el grafo (ids, extremos, longitud, daño, sentido y coordenadas). Cambia si y solo si cambian esos datos; un cambio de geometría o de severidad no la cambia.
+- **Una sola foto de la base:** la versión, los nodos y los tramos se leen en una transacción de solo lectura `REPEATABLE READ`, así que una importación o una actualización de daño en paralelo no deja tramos apuntando a nodos que no están en la lista.
+- **`Cache-Control: no-store`**, y se comprime cuando el cliente lo acepta: con la red de Pasto son unos 1,4 MB de JSON y unos 200 KB por la red.
+
 ## Estructura
 
 Arquitectura por capas, siguiendo el diagrama del profesor: rutas → controladores → servicios → repositorios → base de datos.
@@ -85,7 +107,7 @@ src/
 ├── docs/              Documento OpenAPI que muestra Swagger
 ├── errors/            Errores de la aplicación con su código HTTP
 ├── geojson/           Tipos GeoJSON y conversión de coordenadas para el mapa
-├── middlewares/       CORS, rutas inexistentes (404) y manejo de errores
+├── middlewares/       CORS, compresión, token interno, rutas inexistentes (404) y errores
 ├── repositories/      Acceso a la base de datos con Prisma (patrón Repository)
 ├── osm/               Importación de la red vial: consulta, lectura, tramos e informe
 ├── routes/            Rutas de la API REST
@@ -108,10 +130,11 @@ El servicio se describe en `render.yaml` (región Virginia, plan gratuito, Node 
 
 Variables que se configuran en el panel de Render (no van en el repositorio):
 
-| Variable       | Valor                                                                                         |
-| -------------- | --------------------------------------------------------------------------------------------- |
-| `DATABASE_URL` | Conexión de `app_user` a la rama `production` de Neon (en tu computador se usa `development`) |
-| `CORS_ORIGIN`  | URL del frontend en Vercel                                                                    |
+| Variable         | Valor                                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`   | Conexión de `app_user` a la rama `production` de Neon (en tu computador se usa `development`)    |
+| `CORS_ORIGIN`    | URL del frontend en Vercel                                                                       |
+| `INTERNAL_TOKEN` | Token compartido con el servicio de IA. Mientras no se configure, `/internal/graph` responde 404 |
 
 Cada `push` a `main` vuelve a desplegar el servicio si tiene activado Auto-Deploy; si no, se despliega con **Manual Deploy** desde el panel de Render.
 En el plan gratuito el servicio se duerme tras unos minutos sin uso: la primera petición después de eso tarda unos segundos.
