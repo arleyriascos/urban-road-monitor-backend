@@ -19,3 +19,5 @@ services:
         sync: false
       - key: CORS_ORIGIN
         sync: false
+      - key: INTERNAL_TOKEN
+        sync: false
