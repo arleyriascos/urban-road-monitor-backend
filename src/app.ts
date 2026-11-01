@@ -4,6 +4,7 @@ import { corsMiddleware } from './middlewares/cors.js';
 import { errorHandler } from './middlewares/error-handler.js';
 import { notFoundHandler } from './middlewares/not-found.js';
 import { apiRouter } from './routes/index.js';
+import { internalRouter } from './routes/internal.routes.js';
 
 /**
  * Creates and configures the Express application.
@@ -33,6 +34,8 @@ export function createApp() {
   });
 
   app.use('/api', apiRouter);
+  // Only for the AI service; not listed above on purpose.
+  app.use('/internal', internalRouter);
 
   // Must be registered after all routes.
   app.use(notFoundHandler);
