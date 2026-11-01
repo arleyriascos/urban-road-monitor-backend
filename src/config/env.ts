@@ -5,7 +5,7 @@ import { z } from 'zod';
  * If something is missing or invalid, the server stops with a clear message
  * instead of failing later with an obscure error.
  */
-const envSchema = z.object({
+export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
   DATABASE_URL: z
@@ -23,6 +23,13 @@ const envSchema = z.object({
         .map((origin) => origin.trim())
         .filter(Boolean),
     ),
+  // Shared secret for the /internal endpoints, used by the AI service. Optional: without it
+  // those endpoints answer 404, so deploying before setting it in Render is safe.
+  // An empty value (INTERNAL_TOKEN= in .env) counts as not set.
+  INTERNAL_TOKEN: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.string().trim().min(32, 'INTERNAL_TOKEN must have at least 32 characters').optional(),
+  ),
 });
 
 const parsed = envSchema.safeParse(process.env);
