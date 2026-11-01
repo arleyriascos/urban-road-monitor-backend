@@ -1,3 +1,9 @@
+import {
+  internalPaths,
+  internalSchemas,
+  internalSecuritySchemes,
+  internalTags,
+} from './internal-openapi.js';
 import { mapPaths, mapSchemas, mapTags } from './map-openapi.js';
 
 /**
@@ -28,9 +34,14 @@ export const openApiDocument = {
       'REST API for automatic pothole detection and damage-aware route recommendation on the urban roads of Pasto, Colombia.',
   },
   servers: [{ url: '/', description: 'Current server' }],
-  tags: [{ name: 'Health', description: 'Server and database status' }, ...mapTags],
+  tags: [
+    { name: 'Health', description: 'Server and database status' },
+    ...mapTags,
+    ...internalTags,
+  ],
   paths: {
     ...mapPaths,
+    ...internalPaths,
     '/api/health': {
       get: {
         tags: ['Health'],
@@ -71,8 +82,10 @@ export const openApiDocument = {
     },
   },
   components: {
+    securitySchemes: internalSecuritySchemes,
     schemas: {
       ...mapSchemas,
+      ...internalSchemas,
       Error: errorSchema,
       HealthReport: {
         type: 'object',
