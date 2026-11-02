@@ -119,7 +119,7 @@ Cómo funciona por dentro:
 1. Los dos clics se redondean a 4 decimales (unos 11 m) y la ruta se calcula para esos puntos, así que una ruta de la caché es idéntica a una recién calculada.
 2. La versión de la red se reutiliza 10 segundos en memoria; si vence, las peticiones simultáneas comparten un solo cálculo.
 3. La caché LRU (`src/structures/`) se busca con la clave `origen | destino | criterio | algoritmo | versión`.
-4. Si la ruta no está, se pide al servicio de IA (`POST /routes`, con `INTERNAL_TOKEN`), con hasta 75 s de espera y un reintento 2 s después solo si la conexión falló o Render respondió 502, 503 o 504 mientras despertaba el servicio.
+4. Si la ruta no está, se pide al servicio de IA (`POST /routes`, con `INTERNAL_TOKEN`), con hasta 75 s de espera. Mientras el servicio de IA despierta en Render, Render puede responder al instante con 502, 503 o 504, o con su página de carga (HTML), en vez de retener la petición; en esos casos, o si la conexión falla, el backend sigue intentando con pausas de 2, 4, 8, 8… segundos hasta completar los 75 s. Un error propio del servicio en JSON (`NO_ROUTE`, `OUTSIDE_NETWORK`, token, `GRAPH_UNAVAILABLE`) termina la espera de inmediato.
 5. Se leen de la base el trazado y el nombre de la calle de cada tramo, y los tramos recorridos al revés se dibujan invertidos.
 6. La ruta se guarda congelada en la caché solo si el servicio usó la misma versión de la red; los errores no se guardan.
 
