@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { LruCache } from '../structures/lru-cache.js';
 
@@ -9,12 +10,26 @@ import { LruCache } from '../structures/lru-cache.js';
  * 10,000 addresses: memory has a cap even if many different addresses arrive, and an
  * address unused for long simply drops out and starts again.
  *
- * Behind Render's proxy the real address comes from X-Forwarded-For; app.ts sets
- * "trust proxy" to 1 so Express takes the address Render adds and not one a client invents.
+ * On Render the client address comes from the True-Client-IP header. Render puts
+ * Cloudflare in front of every service, and Cloudflare writes that header with the real
+ * client address, replacing whatever a client sends in it. X-Forwarded-For is not used:
+ * the request crosses several proxies on its way in, and their number is not documented,
+ * so no fixed "trust proxy" count is reliable (one hop counted each request under a
+ * different proxy address, so the limit never applied). Without the header, as when the
+ * backend runs on a computer, the address of the connection is used.
  */
 export const ROUTE_REQUESTS_PER_MINUTE = 30;
 const WINDOW_MS = 60_000;
 const TRACKED_ADDRESSES = 10_000;
+
+/** The address a request is counted under: True-Client-IP if it is a valid IP, else the connection's. */
+export function clientAddress(req: Request): string {
+  const forwarded = req.get('true-client-ip')?.trim();
+  if (forwarded && isIP(forwarded) !== 0) {
+    return forwarded;
+  }
+  return req.ip ?? req.socket.remoteAddress ?? 'unknown';
+}
 
 interface Window {
   readonly startedAt: number;
@@ -26,6 +41,7 @@ export interface RateLimitOptions {
   windowMs?: number;
   capacity?: number;
   now?: () => number;
+  addressOf?: (req: Request) => string;
 }
 
 export function createRateLimit({
@@ -33,11 +49,12 @@ export function createRateLimit({
   windowMs = WINDOW_MS,
   capacity = TRACKED_ADDRESSES,
   now = Date.now,
+  addressOf = clientAddress,
 }: RateLimitOptions = {}): RequestHandler {
   const windows = new LruCache<Window>(capacity);
 
   return (req: Request, res: Response, next: NextFunction) => {
-    const address = req.ip ?? 'unknown';
+    const address = addressOf(req);
     const time = now();
     const current = windows.get(address);
     // A new object every time: the cache does not want its values changed.

@@ -13,10 +13,6 @@ import { internalRouter } from './routes/internal.routes.js';
 export function createApp() {
   const app = express();
 
-  // Render's proxy adds the real client address to X-Forwarded-For; trusting exactly one
-  // proxy makes req.ip that address, which a client cannot fake (used by the rate limit).
-  app.set('trust proxy', 1);
-
   app.use(corsMiddleware);
   app.use(compressionMiddleware);
   app.use(express.json());

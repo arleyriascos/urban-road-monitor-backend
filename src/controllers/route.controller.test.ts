@@ -140,15 +140,15 @@ describe('POST /api/routes in the whole application', () => {
     expect(response.headers.get('cache-control')).toBeNull();
   });
 
-  it('limits each real client address, taken from the address Render adds', async () => {
+  it('limits each client by the True-Client-IP that Render sets', async () => {
     const app = createApp();
     const server = app.listen(0);
     await new Promise((resolve) => server.once('listening', resolve));
     const { port } = server.address() as AddressInfo;
-    const ask = (forwardedFor: string) =>
+    const ask = (clientIp: string) =>
       fetch(`http://localhost:${port}/api/routes`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-forwarded-for': forwardedFor },
+        headers: { 'content-type': 'application/json', 'true-client-ip': clientIp },
         body: JSON.stringify(body),
       });
     try {
@@ -157,7 +157,7 @@ describe('POST /api/routes in the whole application', () => {
       const otherClient = await ask('198.51.100.2');
 
       expect(blocked.status).toBe(429);
-      // Without "trust proxy", every request would share one address and be blocked too.
+      // Every request comes from the same connection; only the header tells clients apart.
       expect(otherClient.status).toBe(503);
     } finally {
       await new Promise((resolve) => server.close(resolve));
