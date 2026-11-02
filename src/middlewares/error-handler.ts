@@ -11,7 +11,11 @@ export function errorHandler(error: unknown, _req: Request, res: Response, _next
   // Expected errors thrown by services (e.g. database unavailable).
   if (error instanceof AppError) {
     res.status(error.statusCode).json({
-      error: { code: error.code, message: error.message },
+      error: {
+        code: error.code,
+        message: error.message,
+        ...(error.details === undefined ? {} : { details: error.details }),
+      },
     });
     return;
   }
