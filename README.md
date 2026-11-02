@@ -32,13 +32,17 @@ npm install
 
 El archivo `.env` está en `.gitignore` y **nunca** se sube a GitHub. Si falta una variable o tiene un formato inválido, el servidor no arranca y muestra cuál es el problema.
 
-| Variable         | Descripción                                                                                        |
-| ---------------- | -------------------------------------------------------------------------------------------------- |
-| `NODE_ENV`       | `development`, `production` o `test`                                                               |
-| `PORT`           | Puerto del servidor (por defecto 3000)                                                             |
-| `DATABASE_URL`   | Conexión a PostgreSQL en Neon con el usuario `app_user`                                            |
-| `CORS_ORIGIN`    | Orígenes del frontend permitidos, separados por comas                                              |
-| `INTERNAL_TOKEN` | Opcional. Token compartido con el servicio de IA (mínimo 32 caracteres); vacío apaga `/internal/*` |
+| Variable               | Descripción                                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`             | `development`, `production` o `test`                                                                    |
+| `PORT`                 | Puerto del servidor (por defecto 3000)                                                                  |
+| `DATABASE_URL`         | Conexión a PostgreSQL en Neon con el usuario `app_user`                                                 |
+| `CORS_ORIGIN`          | Orígenes del frontend permitidos, separados por comas                                                   |
+| `INTERNAL_TOKEN`       | Opcional. Token compartido con el servicio de IA (mínimo 32 caracteres); vacío apaga `/internal/*`      |
+| `AI_SERVICE_URL`       | Opcional. Dirección del servicio de IA que calcula las rutas; en producción debe empezar por `https://` |
+| `ROUTE_CACHE_CAPACITY` | Opcional. Cuántas rutas guarda la caché LRU (por defecto 200, entre 1 y 10.000)                         |
+
+Sin `AI_SERVICE_URL` o sin `INTERNAL_TOKEN`, `POST /api/routes` responde 503 y el resto de la API funciona igual; el servidor lo avisa al arrancar.
 
 Para generar `INTERNAL_TOKEN` (64 caracteres aleatorios):
 
@@ -76,8 +80,50 @@ El mismo valor va en el backend y en el servicio de IA. Nunca se escribe en `.en
 | GET    | `/api/road-segments`      | Todas las calles como GeoJSON, con el color de cada tramo (ver `docs/API-MAPA.md`)       |
 | GET    | `/api/potholes`           | Los baches como GeoJSON; `?includeRepaired=true` incluye los reparados                   |
 | GET    | `/api/road-network/stats` | Totales y leyenda del mapa                                                               |
+| POST   | `/api/routes`             | Ruta entre dos puntos del mapa, lista para dibujar (ver "Rutas" más abajo)               |
 
-Los errores siempre responden en JSON con la forma `{ "error": { "code", "message" } }`.
+Los errores siempre responden en JSON con la forma `{ "error": { "code", "message" } }`, y algunos agregan `details` con datos para el frontend.
+
+`/api/health` incluye un bloque `routeCache` con los aciertos, fallos y desalojos de la caché de rutas desde que arrancó el servidor.
+
+### Rutas (para el frontend)
+
+`POST /api/routes` recibe los dos clics y un criterio, y devuelve la ruta lista para pintar en el mapa:
+
+```json
+{
+  "origin": { "latitude": 1.2136, "longitude": -77.2811 },
+  "destination": { "latitude": 1.215, "longitude": -77.279 },
+  "criterion": "balanced"
+}
+```
+
+- **`criterion`**: `shortest` (la más corta, ignora los baches), `balanced` (por defecto) o `avoid_potholes` (evita los baches). Internamente es el factor `k` = 0, 1 o 3 del costo `longitud × (1 + k × daño)`.
+- **`algorithm`** (opcional): `astar` (por defecto) o `dijkstra`. Dan la misma ruta; sirve para comparar en la presentación cuántos nodos explora cada uno.
+
+La respuesta trae `criterion`, `algorithm`, `fromCache` (si salió de la caché), `origin` y `destination` (la esquina a la que se ajustó cada clic y a cuántos metros quedó), `summary` (`lengthM`, `cost`, `steps`, `exploredNodes`, `computationMs`) y `route`: un GeoJSON `FeatureCollection` con **una línea por tramo, en orden de viaje y con el trazado ya en el sentido del recorrido**. Cada tramo tiene en `properties` su `order`, `segmentId`, `roadName`, `reversed`, `lengthM`, `damageScore` y `cost`, así que el recorrido "anterior / siguiente" es avanzar por la lista.
+
+| Estado | Código                             | Qué mostrar                                                                         |
+| ------ | ---------------------------------- | ----------------------------------------------------------------------------------- |
+| 400    | `INVALID_REQUEST` o `INVALID_JSON` | Un error de la app: el cuerpo no es válido                                          |
+| 404    | `NO_ROUTE`                         | No hay camino que respete los sentidos de las calles                                |
+| 422    | `OUTSIDE_NETWORK`                  | El punto `details.point` quedó a `details.distanceM` metros de la calle más cercana |
+| 429    | `TOO_MANY_REQUESTS`                | Esperar `details.retryAfterS` segundos (también en el encabezado `Retry-After`)     |
+| 503    | `ROUTE_SERVICE_UNAVAILABLE`        | Si `details.retryable` es `true`, ofrecer "intentar de nuevo"                       |
+| 503    | `DATABASE_UNAVAILABLE`             | La base no respondió                                                                |
+
+La primera ruta después de un rato sin uso puede tardar hasta un minuto, porque el servicio de IA de Render despierta; conviene mostrar "calculando ruta, puede tardar hasta un minuto". Para acortarlo, abrir el mapa (`GET /api/road-segments`) ya empieza a despertarlo en segundo plano.
+
+Cómo funciona por dentro:
+
+1. Los dos clics se redondean a 4 decimales (unos 11 m) y la ruta se calcula para esos puntos, así que una ruta de la caché es idéntica a una recién calculada.
+2. La versión de la red se reutiliza 10 segundos en memoria; si vence, las peticiones simultáneas comparten un solo cálculo.
+3. La caché LRU (`src/structures/`) se busca con la clave `origen | destino | criterio | algoritmo | versión`.
+4. Si la ruta no está, se pide al servicio de IA (`POST /routes`, con `INTERNAL_TOKEN`), con hasta 75 s de espera y un reintento 2 s después solo si la conexión falló o Render respondió 502, 503 o 504 mientras despertaba el servicio.
+5. Se leen de la base el trazado y el nombre de la calle de cada tramo, y los tramos recorridos al revés se dibujan invertidos.
+6. La ruta se guarda congelada en la caché solo si el servicio usó la misma versión de la red; los errores no se guardan.
+
+Las rutas no se guardan en la base de datos (`route_requests` y `route_steps` quedan para la Etapa 3), y hay un límite de 30 peticiones de ruta por minuto por dirección IP, que reutiliza la caché LRU para llevar la cuenta de cada dirección.
 
 ### Endpoint interno
 
@@ -126,10 +172,11 @@ src/
 ├── docs/              Documento OpenAPI que muestra Swagger
 ├── errors/            Errores de la aplicación con su código HTTP
 ├── geojson/           Tipos GeoJSON y conversión de coordenadas para el mapa
-├── middlewares/       CORS, compresión, token interno, rutas inexistentes (404) y errores
+├── middlewares/       CORS, compresión, token interno, límite por IP, despertar del servicio de IA, 404 y errores
 ├── repositories/      Acceso a la base de datos con Prisma (patrón Repository)
 ├── osm/               Importación de la red vial: consulta, lectura, tramos e informe
 ├── routes/            Rutas de la API REST
+├── routing/           Petición de ruta: criterios, redondeo de los clics y clave de la caché
 ├── scripts/           Comandos que se ejecutan a mano, como import-roads
 ├── seed/              Baches de prueba: generador, corredores, plan y protecciones
 ├── services/          Lógica de negocio
@@ -150,11 +197,13 @@ El servicio se describe en `render.yaml` (región Virginia, plan gratuito, Node 
 
 Variables que se configuran en el panel de Render (no van en el repositorio):
 
-| Variable         | Valor                                                                                            |
-| ---------------- | ------------------------------------------------------------------------------------------------ |
-| `DATABASE_URL`   | Conexión de `app_user` a la rama `production` de Neon (en tu computador se usa `development`)    |
-| `CORS_ORIGIN`    | URL del frontend en Vercel                                                                       |
-| `INTERNAL_TOKEN` | Token compartido con el servicio de IA. Mientras no se configure, `/internal/graph` responde 404 |
+| Variable               | Valor                                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`         | Conexión de `app_user` a la rama `production` de Neon (en tu computador se usa `development`)           |
+| `CORS_ORIGIN`          | URL del frontend en Vercel                                                                              |
+| `INTERNAL_TOKEN`       | Token compartido con el servicio de IA. Mientras no se configure, `/internal/graph` responde 404        |
+| `AI_SERVICE_URL`       | `https://urban-road-monitor-ai.onrender.com`. Mientras no se configure, `POST /api/routes` responde 503 |
+| `ROUTE_CACHE_CAPACITY` | Opcional; 200 si no se configura                                                                        |
 
 Cada `push` a `main` vuelve a desplegar el servicio si tiene activado Auto-Deploy; si no, se despliega con **Manual Deploy** desde el panel de Render.
 En el plan gratuito el servicio se duerme tras unos minutos sin uso: la primera petición después de eso tarda unos segundos.
