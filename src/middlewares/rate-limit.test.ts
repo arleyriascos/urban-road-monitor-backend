@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { describe, expect, it } from 'vitest';
-import { createRateLimit, ROUTE_REQUESTS_PER_MINUTE } from './rate-limit.js';
+import { clientAddress, createRateLimit, ROUTE_REQUESTS_PER_MINUTE } from './rate-limit.js';
 
 function clock() {
   let time = 1_000_000;
@@ -15,17 +15,17 @@ function clock() {
 
 async function withApp(options: Parameters<typeof createRateLimit>[0]) {
   const app = express();
-  app.set('trust proxy', 1); // as in app.ts
   app.post('/routes', createRateLimit(options), (_req, res) => {
     res.status(200).json({ ok: true });
   });
   const server = app.listen(0);
   await new Promise((resolve) => server.once('listening', resolve));
   const { port } = server.address() as AddressInfo;
-  const ask = (address: string) =>
+  // Every request comes from the same connection; True-Client-IP is what tells clients apart.
+  const ask = (address?: string, extra: Record<string, string> = {}) =>
     fetch(`http://localhost:${port}/routes`, {
       method: 'POST',
-      headers: { 'x-forwarded-for': address },
+      headers: { ...(address === undefined ? {} : { 'true-client-ip': address }), ...extra },
     });
   const close = () => new Promise((resolve) => server.close(resolve));
   return { ask, close };
@@ -95,14 +95,51 @@ describe('createRateLimit', () => {
     }
   });
 
-  it('uses the address Render adds, not one a client puts first', async () => {
+  it('ignores X-Forwarded-For, whose proxies cannot be counted reliably on Render', async () => {
     const { ask, close } = await withApp({ limit: 1 });
     try {
-      // The client invents 1.1.1.1; Render appends the real address at the end.
-      await ask('1.1.1.1, 190.0.0.9');
-      expect((await ask('2.2.2.2, 190.0.0.9')).status).toBe(429);
+      await ask('190.0.0.9', { 'x-forwarded-for': '1.1.1.1' });
+      // Same True-Client-IP and another X-Forwarded-For: still the same client, so blocked.
+      expect((await ask('190.0.0.9', { 'x-forwarded-for': '2.2.2.2' })).status).toBe(429);
+      // Another True-Client-IP with the same X-Forwarded-For: another client, so allowed.
+      expect((await ask('190.0.0.10', { 'x-forwarded-for': '2.2.2.2' })).status).toBe(200);
     } finally {
       await close();
     }
+  });
+
+  it('without True-Client-IP, counts by the address of the connection', async () => {
+    const { ask, close } = await withApp({ limit: 2 });
+    try {
+      await ask();
+      await ask();
+      expect((await ask()).status).toBe(429);
+      expect((await ask('190.0.0.20')).status).toBe(200);
+    } finally {
+      await close();
+    }
+  });
+});
+
+describe('clientAddress', () => {
+  function request(headers: Record<string, string>, ip = '10.0.0.5') {
+    const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
+    return { get: (name: string) => lower[name.toLowerCase()], ip, socket: {} } as never;
+  }
+
+  it('uses True-Client-IP when it is a valid address', () => {
+    expect(clientAddress(request({ 'True-Client-IP': '190.0.0.1' }))).toBe('190.0.0.1');
+    expect(clientAddress(request({ 'True-Client-IP': ' 2800:e2::1 ' }))).toBe('2800:e2::1');
+  });
+
+  it.each(['', 'not-an-ip', '190.0.0.1, 10.0.0.1', '999.1.1.1'])(
+    'falls back to the connection address when True-Client-IP is %j',
+    (value) => {
+      expect(clientAddress(request({ 'True-Client-IP': value }))).toBe('10.0.0.5');
+    },
+  );
+
+  it('uses the connection address without the header', () => {
+    expect(clientAddress(request({}))).toBe('10.0.0.5');
   });
 });
