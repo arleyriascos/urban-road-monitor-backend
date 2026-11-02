@@ -123,7 +123,7 @@ Cómo funciona por dentro:
 5. Se leen de la base el trazado y el nombre de la calle de cada tramo, y los tramos recorridos al revés se dibujan invertidos.
 6. La ruta se guarda congelada en la caché solo si el servicio usó la misma versión de la red; los errores no se guardan.
 
-Las rutas no se guardan en la base de datos (`route_requests` y `route_steps` quedan para la Etapa 3), y hay un límite de 30 peticiones de ruta por minuto por dirección IP, que reutiliza la caché LRU para llevar la cuenta de cada dirección.
+Las rutas no se guardan en la base de datos (`route_requests` y `route_steps` quedan para la Etapa 3), y hay un límite de 30 peticiones de ruta por minuto por dirección IP, que reutiliza la caché LRU para llevar la cuenta de cada dirección. En Render la dirección del cliente se toma del encabezado `True-Client-IP`, que escribe Cloudflare (el servicio que Render tiene delante) con la IP real, reemplazando cualquier valor que mande el cliente; en un computador, sin ese encabezado, se usa la dirección de la conexión. No se usa `X-Forwarded-For`, porque la petición pasa por varios intermediarios de Render y su cantidad no está documentada.
 
 ### Endpoint interno
 
