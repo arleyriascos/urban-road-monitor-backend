@@ -34,3 +34,56 @@ describe('envSchema INTERNAL_TOKEN', () => {
     );
   });
 });
+
+describe('envSchema AI_SERVICE_URL', () => {
+  it('is optional', () => {
+    expect(envSchema.parse(base).AI_SERVICE_URL).toBeUndefined();
+    expect(envSchema.parse({ ...base, AI_SERVICE_URL: '' }).AI_SERVICE_URL).toBeUndefined();
+  });
+
+  it('removes the trailing slash', () => {
+    const parsed = envSchema.parse({ ...base, AI_SERVICE_URL: ' https://ai.example.com/ ' });
+    expect(parsed.AI_SERVICE_URL).toBe('https://ai.example.com');
+  });
+
+  it.each([
+    'ai.example.com',
+    'ftp://ai.example.com',
+    'https://user:secret@ai.example.com',
+    'https://ai.example.com/?debug=1',
+    'https://ai.example.com/#x',
+  ])('rejects %s', (url) => {
+    expect(envSchema.safeParse({ ...base, AI_SERVICE_URL: url }).success).toBe(false);
+  });
+
+  it('requires https in production, because the call carries the token', () => {
+    const parsed = envSchema.safeParse({
+      ...base,
+      NODE_ENV: 'production',
+      AI_SERVICE_URL: 'http://ai.example.com',
+    });
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0]?.message).toBe('AI_SERVICE_URL must use https:// in production');
+  });
+
+  it('allows a local http service in development', () => {
+    const parsed = envSchema.parse({ ...base, AI_SERVICE_URL: 'http://localhost:8000' });
+    expect(parsed.AI_SERVICE_URL).toBe('http://localhost:8000');
+  });
+});
+
+describe('envSchema ROUTE_CACHE_CAPACITY', () => {
+  it('is 200 by default', () => {
+    expect(envSchema.parse(base).ROUTE_CACHE_CAPACITY).toBe(200);
+  });
+
+  it('reads a whole number from the environment', () => {
+    expect(envSchema.parse({ ...base, ROUTE_CACHE_CAPACITY: '500' }).ROUTE_CACHE_CAPACITY).toBe(
+      500,
+    );
+  });
+
+  it.each(['0', '-1', '10001', '2.5', 'many'])('rejects %s', (capacity) => {
+    expect(envSchema.safeParse({ ...base, ROUTE_CACHE_CAPACITY: capacity }).success).toBe(false);
+  });
+});
