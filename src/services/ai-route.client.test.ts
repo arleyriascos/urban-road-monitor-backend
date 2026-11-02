@@ -176,6 +176,65 @@ describe('AiRouteClient.findRoute', () => {
     expect(fetch).toHaveBeenCalledOnce();
   });
 
+  it("treats Render's loading page as the service waking up", async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const loadingPage = new Response('<html>Service waking up</html>', {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+    });
+    const fetch = fakeFetch(loadingPage, json(200, route));
+    const { client, pauses } = makeClient(fetch);
+
+    await expect(client.findRoute(request)).resolves.toEqual(route);
+    expect(pauses).toEqual([2_000]);
+  });
+
+  it('keeps trying with growing pauses while the service wakes up', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetch = fakeFetch(
+      new TypeError('fetch failed'),
+      new TypeError('fetch failed'),
+      new Response('<html>Bad Gateway</html>', { status: 502 }),
+      new Response('<html>Service waking up</html>', { status: 200 }),
+      new Response('', { status: 503 }),
+      json(200, route),
+    );
+    const { client, pauses } = makeClient(fetch);
+
+    await expect(client.findRoute(request)).resolves.toEqual(route);
+    expect(pauses).toEqual([2_000, 4_000, 8_000, 8_000, 8_000]);
+    expect(fetch).toHaveBeenCalledTimes(6);
+  });
+
+  it('gives up when the service does not wake up within 75 s', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetch = fakeFetch(...Array.from({ length: 30 }, () => new TypeError('fetch failed')));
+    const { client, pauses } = makeClient(fetch);
+
+    const result = await failure(client.findRoute(request));
+
+    expect(result).toEqual({
+      kind: 'unavailable',
+      reason:
+        'the AI service did not wake up within 75 s (could not connect to the AI service at ai.example.com)',
+    });
+    const waited = pauses.reduce((total, pause) => total + pause, 0);
+    expect(waited).toBeLessThan(75_000);
+    expect(waited + pauses[pauses.length - 1]).toBeGreaterThanOrEqual(75_000 - 8_000);
+  });
+
+  it('a JSON error of the AI service ends the waiting at once', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetch = fakeFetch(
+      new Response('<html>waking up</html>', { status: 503 }),
+      aiError(404, 'NO_ROUTE'),
+    );
+    const { client, pauses } = makeClient(fetch);
+
+    expect(await failure(client.findRoute(request))).toEqual({ kind: 'no_route' });
+    expect(pauses).toEqual([2_000]);
+  });
+
   it('never puts the token in an error or a log', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const fetch = fakeFetch(new TypeError('fetch failed'), aiError(401, 'UNAUTHORIZED'));
