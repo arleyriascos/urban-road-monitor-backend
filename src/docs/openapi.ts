@@ -5,6 +5,7 @@ import {
   internalTags,
 } from './internal-openapi.js';
 import { mapPaths, mapSchemas, mapTags } from './map-openapi.js';
+import { routePaths, routeSchemas, routeTags } from './route-openapi.js';
 
 /**
  * OpenAPI 3.1 description of the API, rendered by Swagger UI at /api/docs.
@@ -37,10 +38,12 @@ export const openApiDocument = {
   tags: [
     { name: 'Health', description: 'Server and database status' },
     ...mapTags,
+    ...routeTags,
     ...internalTags,
   ],
   paths: {
     ...mapPaths,
+    ...routePaths,
     ...internalPaths,
     '/api/health': {
       get: {
@@ -85,6 +88,7 @@ export const openApiDocument = {
     securitySchemes: internalSecuritySchemes,
     schemas: {
       ...mapSchemas,
+      ...routeSchemas,
       ...internalSchemas,
       Error: errorSchema,
       HealthReport: {
@@ -97,6 +101,17 @@ export const openApiDocument = {
             properties: {
               status: { type: 'string', enum: ['connected', 'disconnected'] },
               latencyMs: { type: ['integer', 'null'], example: 35 },
+            },
+          },
+          routeCache: {
+            type: 'object',
+            description: 'Route cache since the server started (LRU, see POST /api/routes)',
+            properties: {
+              hits: { type: 'integer', example: 12 },
+              misses: { type: 'integer', example: 8 },
+              evictions: { type: 'integer', example: 0 },
+              size: { type: 'integer', example: 8 },
+              capacity: { type: 'integer', example: 200 },
             },
           },
           timestamp: { type: 'string', format: 'date-time' },
