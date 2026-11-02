@@ -92,6 +92,25 @@ Solo lo usa el servicio de IA para calcular rutas. No está en la lista de `GET 
 - **Una sola foto de la base:** la versión, los nodos y los tramos se leen en una transacción de solo lectura `REPEATABLE READ`, así que una importación o una actualización de daño en paralelo no deja tramos apuntando a nodos que no están en la lista.
 - **`Cache-Control: no-store`**, y se comprime cuando el cliente lo acepta: con la red de Pasto son unos 1,4 MB de JSON y unos 200 KB por la red.
 
+## Estructuras de datos de la caché de rutas
+
+`src/structures/` tiene tres estructuras escritas a mano, sin `Map` ni `Set` de JavaScript ni ninguna librería. Las usará `POST /api/routes` (bloque 7 de la Etapa 2) para responder rutas repetidas sin volver a llamar al servicio de IA.
+
+| Estructura  | Archivo                          | Cómo funciona                                                                                                                                                                                                                                                   | Complejidad                                                           |
+| ----------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Tabla hash  | `hash-table.ts` (con `fnv1a.ts`) | Arreglo de cubetas; cada cubeta es una lista simple con las claves que cayeron ahí (encadenamiento separado). La cubeta sale del hash FNV-1a de 32 bits de la clave. Cuando el factor de carga pasaría de 0,75, duplica las cubetas y redistribuye las entradas | `get`, `set`, `delete` y `has` O(1) en promedio; O(n) en el peor caso |
+| Lista doble | `doubly-linked-list.ts`          | Como en la materia: cada nodo tiene un valor y dos punteros, al siguiente y al anterior; el primero es la cabeza (`head`) y el último la cola (`tail`). Las operaciones reciben y devuelven nodos, y cada nodo sabe a qué lista pertenece                       | `pushFront`, `moveToFront`, `remove` y `popBack` O(1)                 |
+| Caché LRU   | `lru-cache.ts`                   | La tabla hash guarda, por cada clave, su nodo en la lista; la lista guarda el orden de uso (la cabeza es lo más reciente). Al llenarse, saca la cola: la entrada que lleva más tiempo sin usarse                                                                | `get`, `peek`, `set` y `delete` O(1) en promedio                      |
+
+- **Capacidad por cantidad de entradas**, mínimo 1. Con 200 rutas, la tabla crece hasta 512 cubetas y se queda ahí, y la caché ocupa como mucho unos 2 MB.
+- **Sin caducidad por tiempo:** la versión de la red forma parte de la clave, así que las rutas viejas dejan de coincidir y la caché las saca a medida que entran las nuevas.
+- **`get` cuenta como uso** y mueve la entrada a la cabeza; `peek` no cambia el orden ni las estadísticas.
+- **`stats()`** devuelve aciertos, fallos y desalojos, para mostrar el porcentaje de aciertos.
+- **`isValid()`** comprueba los invariantes de cada estructura en O(n): la tabla y la lista deben coincidir entrada por entrada.
+- **La caché no copia los valores:** quien la use no debe modificar lo que guarda.
+
+Cada estructura se prueba de dos formas: con ejemplos legibles y con miles de operaciones al azar (semilla fija) comparadas después de cada paso contra una versión simple hecha solo con arreglos. La función hash se prueba con los valores publicados de FNV-1a, y las colisiones se fuerzan a propósito.
+
 ## Estructura
 
 Arquitectura por capas, siguiendo el diagrama del profesor: rutas → controladores → servicios → repositorios → base de datos.
@@ -114,6 +133,7 @@ src/
 ├── scripts/           Comandos que se ejecutan a mano, como import-roads
 ├── seed/              Baches de prueba: generador, corredores, plan y protecciones
 ├── services/          Lógica de negocio
+├── structures/        Estructuras escritas a mano: tabla hash, lista doble y caché LRU
 ├── app.ts             Configuración de Express
 └── server.ts          Punto de entrada: inicia el servidor
 ```
