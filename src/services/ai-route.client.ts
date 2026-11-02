@@ -4,12 +4,12 @@ import { ROUTE_ALGORITHMS, type Point, type RouteAlgorithm } from '../routing/ro
 /**
  * Client of POST /routes of the AI service (the Python service on Render).
  *
- * - One wait of up to 75 s for the whole call: on Render's free plan a sleeping
- *   service can take close to a minute to wake up, and Render holds the request
- *   meanwhile.
- * - One more attempt, 2 s later, only when the connection failed or Render answered
- *   502, 503 or 504 while waking the service (those answers are not the AI service's
- *   own JSON errors).
+ * - Up to 75 s for the whole call: on Render's free plan a sleeping service takes
+ *   about a minute to wake up. Render does not always hold the request meanwhile: it
+ *   can answer at once with 502, 503 or 504, or with its loading page (HTML, not JSON).
+ * - While the service is waking up (a failed connection, one of those statuses without
+ *   the AI service's own JSON error, or a page that is not JSON), the call keeps trying
+ *   with growing pauses (2, 4, 8, 8... s) until the 75 s are used up.
  * - NO_ROUTE and OUTSIDE_NETWORK are answers, not failures: they become their own errors.
  * - Anything else (a token mismatch, GRAPH_UNAVAILABLE, a route that breaks the contract)
  *   is "unavailable", with a reason for the logs that says what to check.
@@ -17,7 +17,8 @@ import { ROUTE_ALGORITHMS, type Point, type RouteAlgorithm } from '../routing/ro
  *   token is never part of a message.
  */
 export const AI_TIMEOUT_MS = 75_000;
-export const AI_RETRY_PAUSE_MS = 2_000;
+/** Pauses between attempts while the AI service wakes up; the last one repeats. */
+export const AI_RETRY_PAUSES_MS: readonly number[] = [2_000, 4_000, 8_000];
 export const WAKE_UP_INTERVAL_MS = 5 * 60_000;
 const RENDER_WAKING_STATUS = [502, 503, 504];
 
@@ -82,15 +83,18 @@ export interface AiRouteClientOptions {
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
   timeoutMs?: number;
-  retryPauseMs?: number;
+  retryPausesMs?: readonly number[];
 }
+
+/** One attempt either gets the route or finds the service still waking up. */
+type Attempt = { route: AiRouteResponse } | { waking: string };
 
 export class AiRouteClient {
   private readonly fetch: typeof fetch;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly now: () => number;
   private readonly timeoutMs: number;
-  private readonly retryPauseMs: number;
+  private readonly retryPausesMs: readonly number[];
   private readonly host: string;
   private lastWakeUp = Number.NEGATIVE_INFINITY;
 
@@ -103,67 +107,90 @@ export class AiRouteClient {
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.now = options.now ?? Date.now;
     this.timeoutMs = options.timeoutMs ?? AI_TIMEOUT_MS;
-    this.retryPauseMs = options.retryPauseMs ?? AI_RETRY_PAUSE_MS;
+    this.retryPausesMs = options.retryPausesMs ?? AI_RETRY_PAUSES_MS;
     this.host = new URL(baseUrl).host;
   }
 
   async findRoute(request: AiRouteRequest): Promise<AiRouteResponse> {
     const deadline = AbortSignal.timeout(this.timeoutMs);
+    const startedAt = this.now();
 
-    for (let attempt = 1; ; attempt++) {
-      let response: Response;
-      try {
-        response = await this.fetch(`${this.baseUrl}/routes`, {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${this.token}`,
-            'content-type': 'application/json',
-            accept: 'application/json',
-          },
-          body: JSON.stringify(request),
-          redirect: 'manual',
-          signal: deadline,
-        });
-      } catch {
-        if (deadline.aborted) {
-          throw unavailable(`the AI service did not answer within ${this.timeoutMs / 1000} s`);
-        }
-        if (attempt < 2) {
-          await this.retryAfter(`could not connect to the AI service at ${this.host}`);
-          continue;
-        }
-        throw unavailable(`could not connect to the AI service at ${this.host}`);
+    for (let retries = 0; ; retries++) {
+      const attempt = await this.attempt(request, deadline);
+      if ('route' in attempt) {
+        return attempt.route;
       }
-
-      const body = await readJson(response);
-      const code = errorCode(body);
-
-      if (response.ok) {
-        const parsed = aiRouteResponseSchema.safeParse(body);
-        if (!parsed.success) {
-          throw unavailable(
-            'the AI service answered with a route that does not follow the contract',
-          );
-        }
-        return parsed.data;
-      }
-      if (response.status === 404 && code === 'NO_ROUTE') {
-        throw new AiRouteError({ kind: 'no_route' });
-      }
-      if (response.status === 422 && code === 'OUTSIDE_NETWORK') {
-        const details = outsideNetworkSchema.safeParse(errorDetails(body));
-        if (details.success) {
-          throw new AiRouteError({ kind: 'outside_network', ...details.data });
-        }
-      }
-      if (RENDER_WAKING_STATUS.includes(response.status) && code === undefined && attempt < 2) {
-        await this.retryAfter(
-          `Render answered HTTP ${response.status} while waking the AI service`,
+      const pause = this.retryPausesMs[Math.min(retries, this.retryPausesMs.length - 1)];
+      if (deadline.aborted || this.now() - startedAt + pause >= this.timeoutMs) {
+        throw unavailable(
+          `the AI service did not wake up within ${this.timeoutMs / 1000} s (${attempt.waking})`,
         );
-        continue;
       }
-      throw unavailable(describeFailure(response.status, code));
+      console.warn(`AI service: ${attempt.waking}; trying again in ${pause / 1000} s`);
+      await this.sleep(pause);
     }
+  }
+
+  /** One call: the route, "still waking up", or a definite error (thrown). */
+  private async attempt(request: AiRouteRequest, deadline: AbortSignal): Promise<Attempt> {
+    let response: Response;
+    try {
+      response = await this.fetch(`${this.baseUrl}/routes`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${this.token}`,
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify(request),
+        redirect: 'manual',
+        signal: deadline,
+      });
+    } catch {
+      if (deadline.aborted) {
+        throw unavailable(`the AI service did not answer within ${this.timeoutMs / 1000} s`);
+      }
+      return { waking: `could not connect to the AI service at ${this.host}` };
+    }
+
+    const status = response.status;
+    if (status >= 300 && status < 400) {
+      throw unavailable(describeFailure(status, undefined));
+    }
+
+    const body = await readJson(response);
+    if (!body.ok) {
+      // Render's loading page (or a bare 5xx) while the service starts; any other page,
+      // such as a 404 from a wrong AI_SERVICE_URL, is a real error.
+      if (status === 200 || status >= 500) {
+        return {
+          waking: `Render answered HTTP ${status} without JSON while waking the AI service`,
+        };
+      }
+      throw unavailable(describeFailure(status, undefined));
+    }
+
+    const code = errorCode(body.value);
+    if (response.ok) {
+      const parsed = aiRouteResponseSchema.safeParse(body.value);
+      if (!parsed.success) {
+        throw unavailable('the AI service answered with a route that does not follow the contract');
+      }
+      return { route: parsed.data };
+    }
+    if (status === 404 && code === 'NO_ROUTE') {
+      throw new AiRouteError({ kind: 'no_route' });
+    }
+    if (status === 422 && code === 'OUTSIDE_NETWORK') {
+      const details = outsideNetworkSchema.safeParse(errorDetails(body.value));
+      if (details.success) {
+        throw new AiRouteError({ kind: 'outside_network', ...details.data });
+      }
+    }
+    if (RENDER_WAKING_STATUS.includes(status) && code === undefined) {
+      return { waking: `Render answered HTTP ${status} while waking the AI service` };
+    }
+    throw unavailable(describeFailure(status, code));
   }
 
   /**
@@ -184,22 +211,17 @@ export class AiRouteClient {
       .then((response) => response.body?.cancel())
       .catch(() => undefined);
   }
-
-  private async retryAfter(reason: string): Promise<void> {
-    console.warn(`AI service: ${reason}; trying again in ${this.retryPauseMs / 1000} s`);
-    await this.sleep(this.retryPauseMs);
-  }
 }
 
 function unavailable(reason: string): AiRouteError {
   return new AiRouteError({ kind: 'unavailable', reason });
 }
 
-async function readJson(response: Response): Promise<unknown> {
+async function readJson(response: Response): Promise<{ ok: true; value: unknown } | { ok: false }> {
   try {
-    return await response.json();
+    return { ok: true, value: await response.json() };
   } catch {
-    return undefined;
+    return { ok: false };
   }
 }
 

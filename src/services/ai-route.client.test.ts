@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  AI_RETRY_PAUSE_MS,
+  AI_RETRY_PAUSES_MS,
   AiRouteClient,
   AiRouteError,
   WAKE_UP_INTERVAL_MS,
@@ -57,12 +57,16 @@ function fakeFetch(...replies: Reply[]) {
   });
 }
 
+/** A client whose pauses move a fake clock, so no test waits for real or retries forever. */
 function makeClient(fetch: ReturnType<typeof fakeFetch>, extra: { timeoutMs?: number } = {}) {
   const pauses: number[] = [];
+  let time = 0;
   const client = new AiRouteClient(BASE, TOKEN, {
     fetch: fetch as unknown as typeof globalThis.fetch,
+    now: () => time,
     sleep: async (ms) => {
       pauses.push(ms);
+      time += ms;
     },
     ...extra,
   });
@@ -118,7 +122,7 @@ describe('AiRouteClient.findRoute', () => {
     ['Render answering 502', new Response('<html>Bad Gateway</html>', { status: 502 })],
     ['Render answering 503', new Response('<html>waking up</html>', { status: 503 })],
     ['Render answering 504', new Response('', { status: 504 })],
-  ])('tries once more, 2 s later, after %s', async (_case, first) => {
+  ])('tries again, 2 s later, after %s', async (_case, first) => {
     const fetch = fakeFetch(first, json(200, route));
     const { client, pauses } = makeClient(fetch);
     vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -126,21 +130,7 @@ describe('AiRouteClient.findRoute', () => {
     await expect(client.findRoute(request)).resolves.toEqual(route);
 
     expect(fetch).toHaveBeenCalledTimes(2);
-    expect(pauses).toEqual([AI_RETRY_PAUSE_MS]);
-  });
-
-  it('gives up after the second attempt', async () => {
-    const fetch = fakeFetch(new TypeError('fetch failed'), new TypeError('fetch failed'));
-    const { client } = makeClient(fetch);
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    const result = await failure(client.findRoute(request));
-
-    expect(result).toEqual({
-      kind: 'unavailable',
-      reason: 'could not connect to the AI service at ai.example.com',
-    });
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(pauses).toEqual([AI_RETRY_PAUSES_MS[0]]);
   });
 
   it.each([
@@ -150,7 +140,7 @@ describe('AiRouteClient.findRoute', () => {
     [aiError(422, 'INVALID_REQUEST'), 'HTTP 422 INVALID_REQUEST'],
     [aiError(500, 'INTERNAL_ERROR'), 'HTTP 500'],
     [json(200, { ...route, steps: 'not a list' }), 'does not follow the contract'],
-    [new Response('not json', { status: 200 }), 'does not follow the contract'],
+    [new Response('<html>Not Found</html>', { status: 404 }), 'HTTP 404'],
     [
       new Response(null, { status: 302, headers: { location: 'https://evil.example.com' } }),
       'redirect',
