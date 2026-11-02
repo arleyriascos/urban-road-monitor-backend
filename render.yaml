@@ -21,3 +21,7 @@ services:
         sync: false
       - key: INTERNAL_TOKEN
         sync: false
+      - key: AI_SERVICE_URL
+        sync: false
+      - key: ROUTE_CACHE_CAPACITY
+        value: '200'
