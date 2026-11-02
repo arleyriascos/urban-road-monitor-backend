@@ -1,5 +1,7 @@
 import { AppError } from '../errors/app-error.js';
 import { healthRepository, type HealthRepository } from '../repositories/health.repository.js';
+import type { CacheStats } from '../structures/lru-cache.js';
+import { routeService } from './route.service.js';
 
 export interface DatabaseStatus {
   status: 'connected' | 'disconnected';
@@ -10,6 +12,8 @@ export interface HealthReport {
   status: 'ok' | 'degraded';
   uptimeSeconds: number;
   database: DatabaseStatus;
+  /** Hits, misses and evictions of the route cache since the server started. */
+  routeCache: CacheStats;
   timestamp: string;
 }
 
@@ -28,7 +32,10 @@ export interface HelloMessage {
 
 /** Business logic for the health check and the "Hello World" endpoint. */
 export class HealthService {
-  constructor(private readonly repository: HealthRepository = healthRepository) {}
+  constructor(
+    private readonly repository: HealthRepository = healthRepository,
+    private readonly routeCacheStats: () => CacheStats = () => routeService.cacheStats(),
+  ) {}
 
   async getHealth(): Promise<HealthReport> {
     const startedAt = performance.now();
@@ -46,6 +53,7 @@ export class HealthService {
       status: database.status === 'connected' ? 'ok' : 'degraded',
       uptimeSeconds: Math.round(process.uptime()),
       database,
+      routeCache: this.routeCacheStats(),
       timestamp: new Date().toISOString(),
     };
   }
