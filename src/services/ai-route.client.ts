@@ -12,6 +12,10 @@ import { ROUTE_ALGORITHMS, type Point, type RouteAlgorithm } from '../routing/ro
  *   the AI service's own JSON error, or a page that is not JSON), the call keeps trying
  *   with growing pauses (2, 4, 8, 8... s), or the wait Render asks for in Retry-After,
  *   until the 75 s are used up. Each try logs Render's x-render-routing header, if any.
+ * - If Render says it will not wake the service for this request (x-render-routing
+ *   "hibernate-...", such as hibernate-rate-limited), waiting is useless: Render wakes a
+ *   free service when a browser asks, not when the backend does. The call stops at once
+ *   and the frontend wakes the service from the user's browser (see the README).
  * - NO_ROUTE and OUTSIDE_NETWORK are answers, not failures: they become their own errors.
  * - Anything else (a token mismatch, GRAPH_UNAVAILABLE, a route that breaks the contract)
  *   is "unavailable", with a reason for the logs that says what to check.
@@ -72,6 +76,7 @@ const outsideNetworkSchema = z.object({
 
 export type AiRouteFailure =
   | { kind: 'no_route' }
+  | { kind: 'hibernating'; routing: string }
   | ({ kind: 'outside_network' } & z.infer<typeof outsideNetworkSchema>)
   | { kind: 'unavailable'; reason: string };
 
@@ -161,6 +166,10 @@ export class AiRouteClient {
     const status = response.status;
     if (status >= 300 && status < 400) {
       throw unavailable(describeFailure(status, undefined));
+    }
+    const routing = safeHeader(response.headers.get('x-render-routing'));
+    if (!response.ok && routing?.includes('hibernate')) {
+      throw new AiRouteError({ kind: 'hibernating', routing });
     }
 
     const body = await readJson(response);

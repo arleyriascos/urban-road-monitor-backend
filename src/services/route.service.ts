@@ -142,6 +142,18 @@ export class RouteService {
           'There is no route between these points that respects one-way streets',
         );
       }
+      if (failure.kind === 'hibernating') {
+        console.warn(
+          `Route service: Render will not wake the AI service for the backend ` +
+            `(x-render-routing: ${failure.routing}); the client should wake it and retry`,
+        );
+        throw new AppError(
+          503,
+          'ROUTE_SERVICE_UNAVAILABLE',
+          'The route service is waking up; try again in a few seconds',
+          { retryable: true, retryAfterS: WAKING_RETRY_AFTER_S },
+        );
+      }
       if (failure.kind === 'outside_network') {
         throw new AppError(
           422,
@@ -180,6 +192,9 @@ export class RouteService {
     return byId;
   }
 }
+
+/** Seconds the frontend is asked to wait while it wakes the AI service from the browser. */
+export const WAKING_RETRY_AFTER_S = 30;
 
 function serviceUnavailable(): AppError {
   return new AppError(
