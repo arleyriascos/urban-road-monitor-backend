@@ -6,10 +6,12 @@ import { ROUTE_ALGORITHMS, type Point, type RouteAlgorithm } from '../routing/ro
  *
  * - Up to 75 s for the whole call: on Render's free plan a sleeping service takes
  *   about a minute to wake up. Render does not always hold the request meanwhile: it
- *   can answer at once with 502, 503 or 504, or with its loading page (HTML, not JSON).
+ *   can answer at once with 429, 502, 503 or 504, or with its loading page (HTML, not
+ *   JSON). The AI service itself never answers 429.
  * - While the service is waking up (a failed connection, one of those statuses without
  *   the AI service's own JSON error, or a page that is not JSON), the call keeps trying
- *   with growing pauses (2, 4, 8, 8... s) until the 75 s are used up.
+ *   with growing pauses (2, 4, 8, 8... s), or the wait Render asks for in Retry-After,
+ *   until the 75 s are used up. Each try logs Render's x-render-routing header, if any.
  * - NO_ROUTE and OUTSIDE_NETWORK are answers, not failures: they become their own errors.
  * - Anything else (a token mismatch, GRAPH_UNAVAILABLE, a route that breaks the contract)
  *   is "unavailable", with a reason for the logs that says what to check.
@@ -20,7 +22,8 @@ export const AI_TIMEOUT_MS = 75_000;
 /** Pauses between attempts while the AI service wakes up; the last one repeats. */
 export const AI_RETRY_PAUSES_MS: readonly number[] = [2_000, 4_000, 8_000];
 export const WAKE_UP_INTERVAL_MS = 5 * 60_000;
-const RENDER_WAKING_STATUS = [502, 503, 504];
+const RENDER_WAKING_STATUS = [429, 502, 503, 504];
+const MIN_RETRY_AFTER_MS = 1_000;
 
 export interface AiRouteRequest {
   origin: Point;
@@ -87,7 +90,7 @@ export interface AiRouteClientOptions {
 }
 
 /** One attempt either gets the route or finds the service still waking up. */
-type Attempt = { route: AiRouteResponse } | { waking: string };
+type Attempt = { route: AiRouteResponse } | { waking: string; retryAfterMs?: number };
 
 export class AiRouteClient {
   private readonly fetch: typeof fetch;
@@ -120,7 +123,9 @@ export class AiRouteClient {
       if ('route' in attempt) {
         return attempt.route;
       }
-      const pause = this.retryPausesMs[Math.min(retries, this.retryPausesMs.length - 1)];
+      const pause =
+        attempt.retryAfterMs ??
+        this.retryPausesMs[Math.min(retries, this.retryPausesMs.length - 1)];
       if (deadline.aborted || this.now() - startedAt + pause >= this.timeoutMs) {
         throw unavailable(
           `the AI service did not wake up within ${this.timeoutMs / 1000} s (${attempt.waking})`,
@@ -162,10 +167,8 @@ export class AiRouteClient {
     if (!body.ok) {
       // Render's loading page (or a bare 5xx) while the service starts; any other page,
       // such as a 404 from a wrong AI_SERVICE_URL, is a real error.
-      if (status === 200 || status >= 500) {
-        return {
-          waking: `Render answered HTTP ${status} without JSON while waking the AI service`,
-        };
+      if (status === 200 || status === 429 || status >= 500) {
+        return waking(response, 'without JSON ');
       }
       throw unavailable(describeFailure(status, undefined));
     }
@@ -188,7 +191,7 @@ export class AiRouteClient {
       }
     }
     if (RENDER_WAKING_STATUS.includes(status) && code === undefined) {
-      return { waking: `Render answered HTTP ${status} while waking the AI service` };
+      return waking(response, '');
     }
     throw unavailable(describeFailure(status, code));
   }
@@ -211,6 +214,37 @@ export class AiRouteClient {
       .then((response) => response.body?.cancel())
       .catch(() => undefined);
   }
+}
+
+/** "Still waking up", with what Render said and how long it asks to wait, if it does. */
+function waking(response: Response, detail: string): { waking: string; retryAfterMs?: number } {
+  const routing = safeHeader(response.headers.get('x-render-routing'));
+  const retryAfterMs = parseRetryAfter(response.headers.get('retry-after'));
+  return {
+    waking:
+      `Render answered HTTP ${response.status} ${detail}while waking the AI service` +
+      (routing ? ` (x-render-routing: ${routing})` : ''),
+    ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+  };
+}
+
+/** Retry-After in seconds or as a date, as milliseconds (at least 1 s); undefined if absent. */
+export function parseRetryAfter(value: string | null, now = Date.now()): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  const ms = /^\d+$/.test(trimmed) ? Number(trimmed) * 1000 : Date.parse(trimmed) - now;
+  return Number.isFinite(ms) ? Math.max(ms, MIN_RETRY_AFTER_MS) : undefined;
+}
+
+/** A header value safe to log: printable characters only, at most 100 of them. */
+function safeHeader(value: string | null): string | undefined {
+  const clean = value
+    ?.replace(/[^\x20-\x7e]/g, '')
+    .trim()
+    .slice(0, 100);
+  return clean ? clean : undefined;
 }
 
 function unavailable(reason: string): AiRouteError {
