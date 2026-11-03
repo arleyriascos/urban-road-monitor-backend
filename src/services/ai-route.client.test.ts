@@ -257,6 +257,24 @@ describe('AiRouteClient.findRoute', () => {
     expect(pauses).toEqual([2_000]);
   });
 
+  it.each([429, 503])(
+    'stops at once when Render will not wake the service (HTTP %i, hibernate-rate-limited)',
+    async (status) => {
+      const fetch = fakeFetch(
+        new Response('', { status, headers: { 'x-render-routing': 'hibernate-rate-limited' } }),
+        json(200, route),
+      );
+      const { client, pauses } = makeClient(fetch);
+
+      expect(await failure(client.findRoute(request))).toEqual({
+        kind: 'hibernating',
+        routing: 'hibernate-rate-limited',
+      });
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(pauses).toEqual([]);
+    },
+  );
+
   it('waits what Retry-After asks for', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const fetch = fakeFetch(

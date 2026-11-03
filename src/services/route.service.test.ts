@@ -277,6 +277,20 @@ describe('RouteService', () => {
     );
   });
 
+  it('asks the client to wake the service and retry when Render will not wake it', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { service } = setup([
+      new AiRouteError({ kind: 'hibernating', routing: 'hibernate-rate-limited' }),
+    ]);
+
+    const error = await appError(service.findRoute(request()));
+
+    expect(error).toMatchObject({ statusCode: 503, code: 'ROUTE_SERVICE_UNAVAILABLE' });
+    expect(error.message).toBe('The route service is waking up; try again in a few seconds');
+    expect(error.details).toEqual({ retryable: true, retryAfterS: 30 });
+    expect(String(warn.mock.calls[0])).toContain('x-render-routing: hibernate-rate-limited');
+  });
+
   it('answers 503 when the database cannot give the drawing of the segments', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const { service, geometry } = setup();
