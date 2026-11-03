@@ -25,7 +25,6 @@ import { ROUTE_ALGORITHMS, type Point, type RouteAlgorithm } from '../routing/ro
 export const AI_TIMEOUT_MS = 75_000;
 /** Pauses between attempts while the AI service wakes up; the last one repeats. */
 export const AI_RETRY_PAUSES_MS: readonly number[] = [2_000, 4_000, 8_000];
-export const WAKE_UP_INTERVAL_MS = 5 * 60_000;
 const RENDER_WAKING_STATUS = [429, 502, 503, 504];
 const MIN_RETRY_AFTER_MS = 1_000;
 
@@ -104,7 +103,6 @@ export class AiRouteClient {
   private readonly timeoutMs: number;
   private readonly retryPausesMs: readonly number[];
   private readonly host: string;
-  private lastWakeUp = Number.NEGATIVE_INFINITY;
 
   constructor(
     private readonly baseUrl: string,
@@ -203,25 +201,6 @@ export class AiRouteClient {
       return waking(response, '');
     }
     throw unavailable(describeFailure(status, code));
-  }
-
-  /**
-   * Wake the AI service up in the background (GET /health, no token, no waiting), at most
-   * once every 5 minutes. Called when someone opens the map, so the service is usually
-   * awake by the time they ask for a route.
-   */
-  wakeUp(): void {
-    const now = this.now();
-    if (now - this.lastWakeUp < WAKE_UP_INTERVAL_MS) {
-      return;
-    }
-    this.lastWakeUp = now;
-    this.fetch(`${this.baseUrl}/health`, {
-      redirect: 'manual',
-      signal: AbortSignal.timeout(this.timeoutMs),
-    })
-      .then((response) => response.body?.cancel())
-      .catch(() => undefined);
   }
 }
 

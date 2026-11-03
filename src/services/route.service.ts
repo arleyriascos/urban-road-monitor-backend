@@ -81,11 +81,6 @@ export class RouteService {
     return this.deps.cache.stats();
   }
 
-  /** Start waking the AI service up in the background (at most once every 5 minutes). */
-  wakeUp(): void {
-    this.deps.client?.wakeUp();
-  }
-
   async findRoute(request: RouteRequest): Promise<RouteAnswer> {
     const client = this.deps.client;
     if (!client) {

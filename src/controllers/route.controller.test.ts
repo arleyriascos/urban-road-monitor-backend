@@ -3,7 +3,6 @@ import express, { type Express } from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../app.js';
 import { AppError } from '../errors/app-error.js';
-import { routeService } from '../services/route.service.js';
 import { errorHandler } from '../middlewares/error-handler.js';
 import type { RouteRequest } from '../routing/route-request.js';
 import type { RouteAnswer, RouteService } from '../services/route.service.js';
@@ -159,21 +158,6 @@ describe('POST /api/routes in the whole application', () => {
       expect(blocked.status).toBe(429);
       // Every request comes from the same connection; only the header tells clients apart.
       expect(otherClient.status).toBe(503);
-    } finally {
-      await new Promise((resolve) => server.close(resolve));
-    }
-  });
-
-  it('opening the map starts waking the AI service up', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    const wakeUp = vi.spyOn(routeService, 'wakeUp');
-    const server = createApp().listen(0);
-    await new Promise((resolve) => server.once('listening', resolve));
-    const { port } = server.address() as AddressInfo;
-    try {
-      // The map itself fails here (there is no database in the tests), but it is asked for.
-      await fetch(`http://localhost:${port}/api/road-segments`);
-      expect(wakeUp).toHaveBeenCalledOnce();
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }

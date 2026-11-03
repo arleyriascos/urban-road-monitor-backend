@@ -3,7 +3,6 @@ import {
   AI_RETRY_PAUSES_MS,
   AiRouteClient,
   AiRouteError,
-  WAKE_UP_INTERVAL_MS,
   parseRetryAfter,
   type AiRouteRequest,
   type AiRouteResponse,
@@ -338,44 +337,6 @@ describe('AiRouteClient.findRoute', () => {
 
     expect(String((error as Error).message)).not.toContain(TOKEN);
     expect(JSON.stringify(warn.mock.calls)).not.toContain(TOKEN);
-  });
-});
-
-describe('AiRouteClient.wakeUp', () => {
-  it('pings /health in the background, without the token', async () => {
-    const fetch = fakeFetch(json(200, { status: 'ok' }));
-    const { client } = makeClient(fetch);
-
-    client.wakeUp();
-
-    const [url, init] = fetch.mock.calls[0];
-    expect(url).toBe(`${BASE}/health`);
-    expect(new Headers(init?.headers).get('authorization')).toBeNull();
-  });
-
-  it('pings at most once every 5 minutes', () => {
-    let now = 0;
-    const fetch = fakeFetch(json(200, {}), json(200, {}));
-    const client = new AiRouteClient(BASE, TOKEN, {
-      fetch: fetch as unknown as typeof globalThis.fetch,
-      now: () => now,
-    });
-
-    client.wakeUp();
-    now += WAKE_UP_INTERVAL_MS - 1;
-    client.wakeUp();
-    now += 1;
-    client.wakeUp();
-
-    expect(fetch).toHaveBeenCalledTimes(2);
-  });
-
-  it('ignores a failed ping', async () => {
-    const fetch = fakeFetch(new TypeError('fetch failed'));
-    const { client } = makeClient(fetch);
-
-    expect(() => client.wakeUp()).not.toThrow();
-    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 });
 
