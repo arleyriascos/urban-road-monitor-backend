@@ -130,8 +130,9 @@ export const routePaths = {
       summary: 'Route between two points, ready to draw',
       description:
         'Both clicks are rounded to 4 decimals (about 11 m) and moved to the nearest ' +
-        'intersection. The first time a route is asked for it may take up to a minute, if ' +
-        'the AI service on Render was asleep; repeated routes come from the cache at once.',
+        'intersection. Repeated routes come from the cache at once. If the AI service on ' +
+        'Render is asleep, the answer is 503 with details.retryAfterS: wake it from the ' +
+        'browser (GET https://urban-road-monitor-ai.onrender.com/health) and try again then.',
       requestBody: {
         required: true,
         content: {
@@ -152,8 +153,9 @@ export const routePaths = {
         ),
         429: errorResponse('TOO_MANY_REQUESTS: more than 30 requests in a minute; see Retry-After'),
         503: errorResponse(
-          'ROUTE_SERVICE_UNAVAILABLE (details.retryable says if trying again can help) or ' +
-            'DATABASE_UNAVAILABLE',
+          'ROUTE_SERVICE_UNAVAILABLE (details.retryable says if trying again can help; ' +
+            'details.retryAfterS means the AI service is asleep: wake it from the browser and ' +
+            'try again after those seconds) or DATABASE_UNAVAILABLE',
         ),
       },
     },

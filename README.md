@@ -103,23 +103,26 @@ Los errores siempre responden en JSON con la forma `{ "error": { "code", "messag
 
 La respuesta trae `criterion`, `algorithm`, `fromCache` (si salió de la caché), `origin` y `destination` (la esquina a la que se ajustó cada clic y a cuántos metros quedó), `summary` (`lengthM`, `cost`, `steps`, `exploredNodes`, `computationMs`) y `route`: un GeoJSON `FeatureCollection` con **una línea por tramo, en orden de viaje y con el trazado ya en el sentido del recorrido**. Cada tramo tiene en `properties` su `order`, `segmentId`, `roadName`, `reversed`, `lengthM`, `damageScore` y `cost`, así que el recorrido "anterior / siguiente" es avanzar por la lista.
 
-| Estado | Código                             | Qué mostrar                                                                         |
-| ------ | ---------------------------------- | ----------------------------------------------------------------------------------- |
-| 400    | `INVALID_REQUEST` o `INVALID_JSON` | Un error de la app: el cuerpo no es válido                                          |
-| 404    | `NO_ROUTE`                         | No hay camino que respete los sentidos de las calles                                |
-| 422    | `OUTSIDE_NETWORK`                  | El punto `details.point` quedó a `details.distanceM` metros de la calle más cercana |
-| 429    | `TOO_MANY_REQUESTS`                | Esperar `details.retryAfterS` segundos (también en el encabezado `Retry-After`)     |
-| 503    | `ROUTE_SERVICE_UNAVAILABLE`        | Si `details.retryable` es `true`, ofrecer "intentar de nuevo"                       |
-| 503    | `DATABASE_UNAVAILABLE`             | La base no respondió                                                                |
+| Estado | Código                             | Qué mostrar                                                                                                                                                             |
+| ------ | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | `INVALID_REQUEST` o `INVALID_JSON` | Un error de la app: el cuerpo no es válido                                                                                                                              |
+| 404    | `NO_ROUTE`                         | No hay camino que respete los sentidos de las calles                                                                                                                    |
+| 422    | `OUTSIDE_NETWORK`                  | El punto `details.point` quedó a `details.distanceM` metros de la calle más cercana                                                                                     |
+| 429    | `TOO_MANY_REQUESTS`                | Esperar `details.retryAfterS` segundos (también en el encabezado `Retry-After`)                                                                                         |
+| 503    | `ROUTE_SERVICE_UNAVAILABLE`        | Con `details.retryAfterS`: el servicio de IA duerme; despertarlo desde el navegador y reintentar (ver abajo). Con solo `details.retryable`: ofrecer "intentar de nuevo" |
+| 503    | `DATABASE_UNAVAILABLE`             | La base no respondió                                                                                                                                                    |
 
-La primera ruta después de un rato sin uso puede tardar hasta un minuto, porque el servicio de IA de Render despierta; conviene mostrar "calculando ruta, puede tardar hasta un minuto". Para acortarlo, abrir el mapa (`GET /api/road-segments`) ya empieza a despertarlo en segundo plano.
+**El servicio de IA duerme y lo despierta el navegador.** En el plan gratuito de Render, el servicio de IA se duerme tras unos minutos sin uso, y Render solo lo despierta cuando lo pide un navegador: cuando lo pide el backend responde 429 con `x-render-routing: hibernate-rate-limited` y no lo despierta (comprobado en producción). Por eso el frontend debe:
+
+1. **Al abrir la app**, despertar el servicio de IA desde el navegador sin esperar la respuesta: `fetch('https://urban-road-monitor-ai.onrender.com/health', { mode: 'no-cors' })`. Ese `/health` es público y no lleva token. Mientras la persona mira el mapa y elige los puntos, el servicio despierta (tarda cerca de un minuto).
+2. **Si una ruta responde 503 `ROUTE_SERVICE_UNAVAILABLE` con `details.retryAfterS`**, mostrar "despertando el servicio de rutas…", volver a llamar ese `/health` desde el navegador y reintentar la ruta pasados `retryAfterS` segundos (30). Si `details.retryable` es `true` pero no trae `retryAfterS`, ofrecer "intentar de nuevo".
 
 Cómo funciona por dentro:
 
 1. Los dos clics se redondean a 4 decimales (unos 11 m) y la ruta se calcula para esos puntos, así que una ruta de la caché es idéntica a una recién calculada.
 2. La versión de la red se reutiliza 10 segundos en memoria; si vence, las peticiones simultáneas comparten un solo cálculo.
 3. La caché LRU (`src/structures/`) se busca con la clave `origen | destino | criterio | algoritmo | versión`.
-4. Si la ruta no está, se pide al servicio de IA (`POST /routes`, con `INTERNAL_TOKEN`), con hasta 75 s de espera. Mientras el servicio de IA despierta en Render, Render puede responder al instante con 429, 502, 503 o 504, o con su página de carga (HTML), en vez de retener la petición (el servicio de IA nunca responde 429 por sí mismo); en esos casos, o si la conexión falla, el backend sigue intentando con pausas de 2, 4, 8, 8… segundos, o lo que pida Render en `Retry-After`, hasta completar los 75 s. Cada intento queda en el registro con el encabezado `x-render-routing` de Render, si lo envía. Un error propio del servicio en JSON (`NO_ROUTE`, `OUTSIDE_NETWORK`, token, `GRAPH_UNAVAILABLE`) termina la espera de inmediato.
+4. Si la ruta no está, se pide al servicio de IA (`POST /routes`, con `INTERNAL_TOKEN`), con hasta 75 s de espera. Mientras el servicio de IA despierta en Render, Render puede responder al instante con 429, 502, 503 o 504, o con su página de carga (HTML), en vez de retener la petición (el servicio de IA nunca responde 429 por sí mismo); en esos casos, o si la conexión falla, el backend sigue intentando con pausas de 2, 4, 8, 8… segundos, o lo que pida Render en `Retry-After`, hasta completar los 75 s. Cada intento queda en el registro con el encabezado `x-render-routing` de Render, si lo envía. Un error propio del servicio en JSON (`NO_ROUTE`, `OUTSIDE_NETWORK`, token, `GRAPH_UNAVAILABLE`) termina la espera de inmediato. Si Render responde con `x-render-routing: hibernate-...` (por ejemplo `hibernate-rate-limited`), el backend no espera: responde enseguida 503 con `retryAfterS: 30`, porque Render no despierta el servicio para el backend y el frontend debe despertarlo desde el navegador.
 5. Se leen de la base el trazado y el nombre de la calle de cada tramo, y los tramos recorridos al revés se dibujan invertidos.
 6. La ruta se guarda congelada en la caché solo si el servicio usó la misma versión de la red; los errores no se guardan.
 
@@ -172,7 +175,7 @@ src/
 ├── docs/              Documento OpenAPI que muestra Swagger
 ├── errors/            Errores de la aplicación con su código HTTP
 ├── geojson/           Tipos GeoJSON y conversión de coordenadas para el mapa
-├── middlewares/       CORS, compresión, token interno, límite por IP, despertar del servicio de IA, 404 y errores
+├── middlewares/       CORS, compresión, token interno, límite por IP, 404 y errores
 ├── repositories/      Acceso a la base de datos con Prisma (patrón Repository)
 ├── osm/               Importación de la red vial: consulta, lectura, tramos e informe
 ├── routes/            Rutas de la API REST
