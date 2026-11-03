@@ -4,6 +4,7 @@ import {
   AiRouteClient,
   AiRouteError,
   WAKE_UP_INTERVAL_MS,
+  parseRetryAfter,
   type AiRouteRequest,
   type AiRouteResponse,
 } from './ai-route.client.js';
@@ -235,6 +236,81 @@ describe('AiRouteClient.findRoute', () => {
     expect(pauses).toEqual([2_000]);
   });
 
+  it('treats a 429 from Render as the service waking up', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetch = fakeFetch(
+      new Response('<html>Too Many Requests</html>', { status: 429 }),
+      json(200, route),
+    );
+    const { client, pauses } = makeClient(fetch);
+
+    await expect(client.findRoute(request)).resolves.toEqual(route);
+    expect(pauses).toEqual([2_000]);
+  });
+
+  it('treats a 429 whose JSON is not the AI service error as the service waking up', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetch = fakeFetch(json(429, { message: 'Too Many Requests' }), json(200, route));
+    const { client, pauses } = makeClient(fetch);
+
+    await expect(client.findRoute(request)).resolves.toEqual(route);
+    expect(pauses).toEqual([2_000]);
+  });
+
+  it('waits what Retry-After asks for', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetch = fakeFetch(
+      new Response('', { status: 429, headers: { 'retry-after': '5' } }),
+      json(200, route),
+    );
+    const { client, pauses } = makeClient(fetch);
+
+    await expect(client.findRoute(request)).resolves.toEqual(route);
+    expect(pauses).toEqual([5_000]);
+  });
+
+  it('gives up when Retry-After asks to wait past the 75 s', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetch = fakeFetch(new Response('', { status: 429, headers: { 'retry-after': '120' } }));
+    const { client, pauses } = makeClient(fetch);
+
+    const result = await failure(client.findRoute(request));
+
+    expect(result.kind === 'unavailable' && result.reason).toContain(
+      'did not wake up within 75 s (Render answered HTTP 429',
+    );
+    expect(pauses).toEqual([]);
+  });
+
+  it("does not retry a 429 that carries the AI service's own JSON error", async () => {
+    const fetch = fakeFetch(aiError(429, 'TOO_MANY_REQUESTS'));
+    const { client, pauses } = makeClient(fetch);
+
+    const result = await failure(client.findRoute(request));
+
+    expect(result).toEqual({
+      kind: 'unavailable',
+      reason: 'unexpected answer from the AI service (HTTP 429 TOO_MANY_REQUESTS)',
+    });
+    expect(pauses).toEqual([]);
+  });
+
+  it("logs Render's x-render-routing header on each try", async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetch = fakeFetch(
+      new Response('', { status: 429, headers: { 'x-render-routing': 'dynamic-spin-up' } }),
+      json(200, route),
+    );
+    const { client } = makeClient(fetch);
+
+    await client.findRoute(request);
+
+    expect(warn).toHaveBeenCalledWith(
+      'AI service: Render answered HTTP 429 without JSON while waking the AI service ' +
+        '(x-render-routing: dynamic-spin-up); trying again in 2 s',
+    );
+  });
+
   it('never puts the token in an error or a log', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const fetch = fakeFetch(new TypeError('fetch failed'), aiError(401, 'UNAUTHORIZED'));
@@ -282,5 +358,25 @@ describe('AiRouteClient.wakeUp', () => {
 
     expect(() => client.wakeUp()).not.toThrow();
     await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+});
+
+describe('parseRetryAfter', () => {
+  it('reads a number of seconds', () => {
+    expect(parseRetryAfter('5')).toBe(5_000);
+    expect(parseRetryAfter(' 30 ')).toBe(30_000);
+  });
+
+  it('reads an HTTP date', () => {
+    const now = Date.parse('2026-11-02T20:00:00Z');
+    expect(parseRetryAfter('Mon, 02 Nov 2026 20:00:10 GMT', now)).toBe(10_000);
+  });
+
+  it('waits at least 1 s', () => {
+    expect(parseRetryAfter('0')).toBe(1_000);
+  });
+
+  it.each([null, '', 'soon'])('ignores %j', (value) => {
+    expect(parseRetryAfter(value)).toBeUndefined();
   });
 });
