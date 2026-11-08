@@ -24,6 +24,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    // The test files that use PostgreSQL share one database and empty its tables before each
+    // test. Run in parallel, one file would empty the users another is using and break its
+    // foreign keys. One file at a time avoids it, and the suite stays fast.
+    fileParallelism: false,
     // Fake values so modules that read the environment can be imported in tests.
     // They are not secrets and nothing connects to this address.
     env: {
