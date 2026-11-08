@@ -15,6 +15,7 @@ Base de datos del proyecto **Detección de Baches y Rutas en Vías Urbanas** (Po
 | `05_app_user.sql` | Crea el usuario `app_user` con el que se conecta el backend: puede leer y escribir datos, pero no modificar la estructura ni borrar usuarios. Se ejecuta aparte, una vez por entorno |
 | `06_add_segment_geometry.sql` | Migración: agrega a `road_segments` la columna `geometry` con el trazado de cada tramo, para dibujar bien las calles curvas |
 | `07_add_geometry_to_segment_status_view.sql` | Migración: agrega `geometry` a la vista `v_segment_status`, que es la que lee el mapa |
+| `08_auth_base.sql` | Migración: base de las sesiones y los roles de la Etapa 3 (ver más abajo) |
 
 ## Cómo ejecutarlo
 
@@ -41,6 +42,7 @@ dañar nada.
 | --- | --- |
 | 06 | `road_segments.geometry` (JSONB): lista de puntos `[latitud, longitud]` desde el nodo inicial hasta el final. Así una calle curva se dibuja con su forma real, mientras el grafo conserva un solo nodo por intersección |
 | 07 | La vista `v_segment_status` incluye `geometry` al final |
+| 08 | `sessions.refresh_token_hash` pasa a `token_hash` (guarda el SHA-256 del identificador de sesión). Nuevo rol `usuario`, sin permisos propios. `auth_logs` suma la columna `reason` y más tipos de evento. Los correos se guardan en minúsculas (`chk_users_email_lowercase`). Se puede ejecutar dos veces sin dañar nada y termina con una consulta de verificación |
 
 ## Volver a crear desde cero
 
