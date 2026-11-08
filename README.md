@@ -32,15 +32,16 @@ npm install
 
 El archivo `.env` está en `.gitignore` y **nunca** se sube a GitHub. Si falta una variable o tiene un formato inválido, el servidor no arranca y muestra cuál es el problema.
 
-| Variable               | Descripción                                                                                             |
-| ---------------------- | ------------------------------------------------------------------------------------------------------- |
-| `NODE_ENV`             | `development`, `production` o `test`                                                                    |
-| `PORT`                 | Puerto del servidor (por defecto 3000)                                                                  |
-| `DATABASE_URL`         | Conexión a PostgreSQL en Neon con el usuario `app_user`                                                 |
-| `CORS_ORIGIN`          | Orígenes del frontend permitidos, separados por comas                                                   |
-| `INTERNAL_TOKEN`       | Opcional. Token compartido con el servicio de IA (mínimo 32 caracteres); vacío apaga `/internal/*`      |
-| `AI_SERVICE_URL`       | Opcional. Dirección del servicio de IA que calcula las rutas; en producción debe empezar por `https://` |
-| `ROUTE_CACHE_CAPACITY` | Opcional. Cuántas rutas guarda la caché LRU (por defecto 200, entre 1 y 10.000)                         |
+| Variable               | Descripción                                                                                                                                     |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`             | `development`, `production` o `test`                                                                                                            |
+| `PORT`                 | Puerto del servidor (por defecto 3000)                                                                                                          |
+| `DATABASE_URL`         | Conexión a PostgreSQL en Neon con el usuario `app_user`                                                                                         |
+| `CORS_ORIGIN`          | Orígenes del frontend permitidos, separados por comas                                                                                           |
+| `INTERNAL_TOKEN`       | Opcional. Token compartido con el servicio de IA (mínimo 32 caracteres); vacío apaga `/internal/*`                                              |
+| `AI_SERVICE_URL`       | Opcional. Dirección del servicio de IA que calcula las rutas; en producción debe empezar por `https://`                                         |
+| `ROUTE_CACHE_CAPACITY` | Opcional. Cuántas rutas guarda la caché LRU (por defecto 200, entre 1 y 10.000)                                                                 |
+| `TEST_DATABASE_URL`    | Opcional. Solo para las pruebas con PostgreSQL real: una base en tu computador cuyo nombre termina en `_test` (ver "Pruebas con base de datos") |
 
 Sin `AI_SERVICE_URL` o sin `INTERNAL_TOKEN`, `POST /api/routes` responde 503 y el resto de la API funciona igual; el servidor lo avisa al arrancar.
 
@@ -170,6 +171,7 @@ database/              Scripts SQL, diagrama entidad-relación y su README
 docs/                  Guías de uso, como la importación de la red vial
 prisma/                Esquema de Prisma (generado con npm run db:pull)
 src/
+├── auth/              Reglas de las sesiones: duración, identificador y datos que se guardan
 ├── config/            Variables de entorno y conexión única a la base (Singleton)
 ├── controllers/       Reciben la petición y responden con el código HTTP correcto
 ├── docs/              Documento OpenAPI que muestra Swagger
@@ -184,9 +186,24 @@ src/
 ├── seed/              Baches de prueba: generador, corredores, plan y protecciones
 ├── services/          Lógica de negocio
 ├── structures/        Estructuras escritas a mano: tabla hash, lista doble y caché LRU
+├── test/              Apoyo para las pruebas que usan PostgreSQL (con sus protecciones)
 ├── app.ts             Configuración de Express
 └── server.ts          Punto de entrada: inicia el servidor
 ```
+
+## Pruebas con base de datos
+
+`npm test` corre sin ninguna base. Las pruebas que revisan el SQL de verdad (sesiones, registros de acceso y la migración 08) se omiten solas si no existe `TEST_DATABASE_URL`. Ver `docs/AUTENTICACION.md`.
+
+Para activarlas, una sola vez en tu computador:
+
+1. Crea una base vacía llamada `urban_road_monitor_test` (en pgAdmin, o con `psql -U postgres -c "CREATE DATABASE urban_road_monitor_test"`).
+2. Ejecútale, conectado como dueño de la base, en este orden: `database/00_run_all.sql`, `06_add_segment_geometry.sql`, `07_add_geometry_to_segment_status_view.sql` y `08_auth_base.sql`. No hace falta `05_app_user.sql`.
+3. Agrega a tu `.env`: `TEST_DATABASE_URL=postgresql://postgres:TU_CONTRASEÑA@localhost:5432/urban_road_monitor_test`.
+
+Protecciones: estas pruebas vacían tablas, así que solo aceptan una base en `localhost` cuyo nombre termine en `_test`. Una dirección de Neon o de otra base se rechaza antes de conectar. Solo `TEST_DATABASE_URL` se lee del `.env` para las pruebas; el `DATABASE_URL` real nunca llega a ellas.
+
+Los archivos de prueba corren uno tras otro (`fileParallelism: false` en `vitest.config.ts`): comparten esa base y la vacían antes de cada prueba, así que en paralelo un archivo borraría los datos que otro está usando.
 
 ## Despliegue en Render
 
