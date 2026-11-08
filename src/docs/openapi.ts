@@ -1,3 +1,4 @@
+import { authPaths, authSchemas, authTags } from './auth-openapi.js';
 import {
   internalPaths,
   internalSchemas,
@@ -39,11 +40,13 @@ export const openApiDocument = {
     { name: 'Health', description: 'Server and database status' },
     ...mapTags,
     ...routeTags,
+    ...authTags,
     ...internalTags,
   ],
   paths: {
     ...mapPaths,
     ...routePaths,
+    ...authPaths,
     ...internalPaths,
     '/api/health': {
       get: {
@@ -89,6 +92,7 @@ export const openApiDocument = {
     schemas: {
       ...mapSchemas,
       ...routeSchemas,
+      ...authSchemas,
       ...internalSchemas,
       Error: errorSchema,
       HealthReport: {

@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { openApiDocument } from './openapi.js';
 
 describe('openApiDocument', () => {
-  it('lists the health, map, route and internal endpoints', () => {
+  it('lists the health, map, route, auth and internal endpoints', () => {
     expect(Object.keys(openApiDocument.paths).sort()).toEqual([
+      '/api/auth/google',
       '/api/health',
       '/api/hello',
       '/api/potholes',
@@ -14,11 +15,12 @@ describe('openApiDocument', () => {
     ]);
   });
 
-  it('lists the Health, Map, Routes and Internal tags', () => {
+  it('lists the Health, Map, Routes, Auth and Internal tags', () => {
     expect(openApiDocument.tags.map((tag) => tag.name)).toEqual([
       'Health',
       'Map',
       'Routes',
+      'Auth',
       'Internal',
     ]);
   });
@@ -42,6 +44,9 @@ describe('openApiDocument', () => {
         'RoadGraph',
         'RouteRequest',
         'RouteAnswer',
+        'GoogleLoginRequest',
+        'GoogleLoginAnswer',
+        'AuthUser',
       ]),
     );
   });
