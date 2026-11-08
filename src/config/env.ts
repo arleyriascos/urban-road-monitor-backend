@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+/** A Google OAuth client ID looks like <numbers>-<letters>.apps.googleusercontent.com. */
+const GOOGLE_CLIENT_ID_FORMAT = /^[A-Za-z0-9_-]+\.apps\.googleusercontent\.com$/;
+
 /**
  * Validates environment variables once at startup.
  * If something is missing or invalid, the server stops with a clear message
@@ -43,6 +46,22 @@ export const envSchema = z
           message:
             'AI_SERVICE_URL must be an http:// or https:// address without a user, query or fragment',
         })
+        .optional(),
+    ),
+    // Client ID of the Google app that signs people in (the same one the frontend uses for its
+    // button). The backend only accepts Google tokens issued for this ID. It is public, but the
+    // client secret is not: the format is checked so the secret cannot be pasted here by mistake.
+    // Optional: without it POST /api/auth/google answers 503, so deploying before setting it in
+    // Render is safe. An empty value (GOOGLE_CLIENT_ID= in .env) counts as not set.
+    GOOGLE_CLIENT_ID: z.preprocess(
+      (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+      z
+        .string()
+        .trim()
+        .regex(
+          GOOGLE_CLIENT_ID_FORMAT,
+          'GOOGLE_CLIENT_ID must be a Google client ID that ends in .apps.googleusercontent.com',
+        )
         .optional(),
     ),
     // How many routes the route cache keeps (an LRU cache: the least recently used goes first).

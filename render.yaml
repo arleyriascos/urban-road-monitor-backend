@@ -23,5 +23,7 @@ services:
         sync: false
       - key: AI_SERVICE_URL
         sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
       - key: ROUTE_CACHE_CAPACITY
         value: '200'

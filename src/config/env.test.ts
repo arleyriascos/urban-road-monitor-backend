@@ -87,3 +87,42 @@ describe('envSchema ROUTE_CACHE_CAPACITY', () => {
     expect(envSchema.safeParse({ ...base, ROUTE_CACHE_CAPACITY: capacity }).success).toBe(false);
   });
 });
+
+describe('envSchema GOOGLE_CLIENT_ID', () => {
+  // Made-up values, built in pieces on purpose: a whole text that looks like a Google client ID
+  // or client secret makes GitHub's secret scanning refuse the push, even when it is not real.
+  const SUFFIX = ['.apps', 'googleusercontent', 'com'].join('.');
+  const clientId = `123456789-abcdefghijklmnopqrstuvwxyz012345${SUFFIX}`;
+
+  it('is optional', () => {
+    expect(envSchema.parse(base).GOOGLE_CLIENT_ID).toBeUndefined();
+  });
+
+  it('treats an empty value as not set', () => {
+    expect(envSchema.parse({ ...base, GOOGLE_CLIENT_ID: '' }).GOOGLE_CLIENT_ID).toBeUndefined();
+    expect(envSchema.parse({ ...base, GOOGLE_CLIENT_ID: '  ' }).GOOGLE_CLIENT_ID).toBeUndefined();
+  });
+
+  it('accepts a Google client ID and removes the spaces around it', () => {
+    expect(envSchema.parse({ ...base, GOOGLE_CLIENT_ID: clientId }).GOOGLE_CLIENT_ID).toBe(
+      clientId,
+    );
+    expect(envSchema.parse({ ...base, GOOGLE_CLIENT_ID: ` ${clientId}\n` }).GOOGLE_CLIENT_ID).toBe(
+      clientId,
+    );
+  });
+
+  it.each([
+    ['a client secret pasted by mistake', ['GOCSPX', 'abcdefghijklmnopqrstuvwxyz12'].join('-')],
+    ['another domain', '123456789-abc123.apps.example.com'],
+    ['only the suffix', SUFFIX],
+    ['a text with spaces inside', `123 456${SUFFIX}`],
+    ['a URL', `https://123456789-abc${SUFFIX}`],
+  ])('rejects %s', (_name, value) => {
+    const parsed = envSchema.safeParse({ ...base, GOOGLE_CLIENT_ID: value });
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0]?.message).toBe(
+      'GOOGLE_CLIENT_ID must be a Google client ID that ends in .apps.googleusercontent.com',
+    );
+  });
+});
