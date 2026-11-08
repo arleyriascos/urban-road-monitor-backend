@@ -1,6 +1,100 @@
-# Sesiones (Etapa 3, bloque 1)
+# Autenticación (Etapa 3, bloques 1 y 2)
 
-Este documento explica cómo funcionan las sesiones del backend. Todavía no hay ningún endpoint de ingreso: llega en el bloque 2 (Google). Aquí está la base sobre la que se apoya: abrir, comprobar, renovar y cerrar una sesión.
+Este documento explica cómo se entra al backend y cómo funcionan las sesiones. Tiene dos partes:
+
+- **Ingreso con Google (bloque 2):** `POST /api/auth/google` comprueba el token de Google, encuentra o crea la cuenta y abre una sesión.
+- **Sesiones (bloque 1):** abrir, comprobar, renovar y cerrar una sesión. Es la base sobre la que se apoya el ingreso.
+
+## Ingreso con Google
+
+### El recorrido de una petición
+
+1. El frontend manda `{ "credential": "<token de Google>" }` a `POST /api/auth/google`. El cuerpo se valida (texto de 1 a 4096 caracteres); los demás campos que da el botón de Google se ignoran.
+2. **Límite:** 10 intentos por minuto y dirección IP, contados aparte de los 30 de las rutas. La petición número 11 recibe 429 con `Retry-After`, sin mirar el token y **sin escribir nada** en `auth_logs`. Se cuenta antes de verificar, para que un ataque no gaste llamadas a Google ni a la base. Funciona con la dirección de `True-Client-IP` (ver el README).
+3. **La librería oficial de Google** (`google-auth-library`) comprueba la firma, el emisor, el vencimiento y que el token se emitió para **nuestro** ID de cliente (`GOOGLE_CLIENT_ID`). Descarga las claves públicas de Google, las guarda y sigue su rotación.
+4. **Nuestras comprobaciones** (`src/auth/google-identity.ts`), en este orden:
+   - el token trae `sub` y correo, y el correo tiene forma de correo y solo caracteres ASCII imprimibles;
+   - `email_verified` es verdadero;
+   - el token se emitió hace **10 minutos o menos** (Google le da una hora de vida; acortarla reduce lo que serviría uno robado). Se tolera hasta 60 segundos de diferencia entre relojes si el token parece del futuro.
+5. **La cuenta**, en una sola transacción (`src/repositories/user.repository.ts`):
+
+   | Situación                                                    | Qué pasa                                                                                                | Eventos en `auth_logs`            |
+   | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | --------------------------------- |
+   | El `sub` ya está en `oauth_accounts`                         | Entra con esa cuenta                                                                                    | `login`                           |
+   | `sub` nuevo y ninguna cuenta tiene ese correo                | Se crea la cuenta, su enlace con Google y el rol `usuario`, todo junto                                  | `register` y `login`              |
+   | `sub` nuevo y una cuenta activa tiene ese correo, sin enlace | Se enlaza el `sub` a esa cuenta, porque Google verificó el correo; conserva sus roles                   | `account_linked` y `login`        |
+   | La cuenta existe pero está desactivada o borrada             | No entra ni se enlaza; no se cambia nada. Responde 403                                                  | `login_failed` (`user_inactive`)  |
+   | La cuenta con ese correo ya está enlazada a **otro** `sub`   | No se enlaza nada. Responde 401. El correo pudo pasar a otra persona (pasa con cuentas de organización) | `login_failed` (`email_conflict`) |
+
+6. **La sesión** la abre el servicio del bloque 1 (`SessionService.open`) y la respuesta lleva el identificador **una sola vez**.
+
+Si dos ingresos de la misma persona nueva llegan a la vez, el segundo choca con una llave única (el correo o el enlace con Google); se captura ese choque (código `P2002` de Prisma) y se repite la transacción una vez, que ya encuentra lo que hizo el primero. Nunca queda una cuenta sin rol ni sin enlace: si falta el rol `usuario` (la migración 08 sin aplicar), todo se deshace.
+
+### Lo que responde
+
+```json
+{
+  "token": "<43 caracteres, se muestra una sola vez>",
+  "expiresAt": "2026-11-17T12:00:00.000Z",
+  "user": {
+    "id": "…",
+    "email": "ana@example.com",
+    "fullName": "Ana Pérez",
+    "avatarUrl": "https://…",
+    "roles": ["usuario"]
+  }
+}
+```
+
+La respuesta lleva `Cache-Control: no-store`. Los roles salen en orden alfabético.
+
+| Estado | Código                      | Cuándo                                                                                                                                                                                    |
+| ------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | `INVALID_REQUEST`           | Falta `credential` o no es un texto de 1 a 4096 caracteres                                                                                                                                |
+| 400    | `INVALID_JSON`              | El cuerpo no es JSON                                                                                                                                                                      |
+| 401    | `INVALID_GOOGLE_TOKEN`      | Cualquier problema del token: firma, otra app, vencido, de hace más de 10 minutos, sin `sub` o sin correo, correo sin verificar, o correo de otra identidad. **Siempre el mismo mensaje** |
+| 403    | `ACCOUNT_DISABLED`          | Google confirmó a la persona, pero su cuenta está desactivada o borrada. Es distinto del 401 porque quien llega aquí ya demostró quién es                                                 |
+| 429    | `TOO_MANY_REQUESTS`         | Más de 10 intentos en un minuto desde la misma dirección                                                                                                                                  |
+| 503    | `AUTH_PROVIDER_UNAVAILABLE` | No se pudieron traer las claves de Google. **No es un 401:** "no pude comprobar" no es "el token es malo"                                                                                 |
+| 503    | `AUTH_NOT_CONFIGURED`       | Falta `GOOGLE_CLIENT_ID`                                                                                                                                                                  |
+| 503    | `DATABASE_UNAVAILABLE`      | La base no responde                                                                                                                                                                       |
+
+El 401 es igual para todos los motivos a propósito: quien prueba tokens robados o inventados no aprende nada de la respuesta. El motivo real solo queda en `auth_logs`.
+
+### Qué se copia de Google a la cuenta
+
+| Dato           | Cuándo                  | Regla                                                                                                                                                                                                                                                                                                         |
+| -------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Correo         | Solo al crear la cuenta | Se guarda en minúsculas (la base lo exige). **Nunca se cambia solo**: la identidad de la persona es el `sub`, no el correo. Si Google cambia el correo de un `sub`, la cuenta sigue con el viejo                                                                                                              |
+| Nombre         | En cada ingreso         | Se recortan los espacios, se quitan los caracteres de control y los que invierten la dirección del texto, y se corta a 150 caracteres sin partir un emoji. Si Google no manda nombre, al crear la cuenta se usa la parte del correo antes de la `@`, y en ingresos posteriores se conserva el nombre guardado |
+| Foto           | En cada ingreso         | Solo una dirección `https://` con host, de 2048 caracteres o menos, sin usuario ni contraseña, sin espacios ni caracteres de control. Si no cumple, o Google no manda foto, queda en `null`. Así `avatar_url` nunca puede traer `javascript:` ni `data:`                                                      |
+| Último ingreso | En cada ingreso         | `users.last_login_at`, en la misma transacción que el nombre y la foto                                                                                                                                                                                                                                        |
+
+### Qué se registra en `auth_logs`
+
+| Evento           | Éxito | Cuándo                                                                                                                         |
+| ---------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `register`       | sí    | Se creó la cuenta                                                                                                              |
+| `account_linked` | sí    | Se enlazó Google a una cuenta que ya existía                                                                                   |
+| `login`          | sí    | Se abrió la sesión                                                                                                             |
+| `login_failed`   | no    | Con `reason`: `invalid_token`, `email_unverified`, `token_too_old`, `user_inactive`, `email_conflict` o `provider_unavailable` |
+
+No se registran los 400, los 429, `AUTH_NOT_CONFIGURED` ni la base caída. Ninguna fila guarda el token de Google, el identificador de sesión ni el correo. La dirección IP solo se guarda en los fallos y con su último número cortado. Si el registro no se puede escribir, la persona entra igual.
+
+### Configuración y Google Cloud
+
+- **Backend:** la variable `GOOGLE_CLIENT_ID` (en `.env` y en el panel de Render). Es opcional: sin ella el endpoint responde 503 y el resto de la API funciona.
+- **Google Cloud** (proyecto `urban-road-monitor`, con una cuenta dedicada al proyecto): un cliente de tipo aplicación web, `urban-road-monitor-web`, con los orígenes `http://localhost`, `http://localhost:5173` y la URL de producción de Vercel, sin URIs de redirección, y con solo los alcances `openid`, correo y perfil. El secreto del cliente no se usa.
+- **Un solo cliente para local y producción:** el backend de producción solo acepta tokens emitidos para su ID de cliente, así que una prueba real hecha desde una página en `localhost` necesita estar en el mismo cliente. Al terminar el proyecto conviene quitar los orígenes de `localhost`.
+- **Estado de la app: Prueba.** Con solo esos tres alcances cualquier cuenta de Google puede entrar, pero la pantalla de Google avisa que la app está en pruebas. Publicarla exige llenar la página principal, la política de privacidad y el dominio autorizado en Información de la marca; queda pendiente hasta que exista la página de privacidad. Sin verificación de marca la pantalla de Google no muestra el nombre ni el logo de la app, solo el dominio.
+
+### Pruebas del ingreso
+
+- `google-token-verifier.test.ts` usa la librería real de Google con tokens firmados por una clave creada en la prueba (`src/test/google-test-keys.ts`): firma, otra app, otro emisor, vencido, firma de otra clave, contenido cambiado y Google caído.
+- `google-identity.test.ts` y `profile-rules.test.ts` cubren las reglas puras con sus bordes (10 minutos exactos, 60 segundos, 150 caracteres, 2048 caracteres).
+- `user.repository.integration.test.ts` y `auth.integration.test.ts` corren contra PostgreSQL real (ver "Pruebas con base de datos" en el README), incluida una colisión provocada a propósito entre dos transacciones.
+
+## Sesiones
 
 ## El identificador de sesión
 
@@ -68,6 +162,12 @@ Las pruebas con SQL real corren contra un PostgreSQL local aparte, solo si exist
 
 ## Pendientes conocidos
 
+- **Un token de Google robado sirve hasta 10 minutos.** No hay `nonce`: protegería de un token interceptado, pero exigiría un endpoint nuevo, estado en el servidor (que en Render gratuito se pierde al dormirse) y trabajo extra del frontend. Quien pudiera leer el token desde la página también podría leer la sesión en `localStorage`.
+- **Si Google cambia el correo de una cuenta, la nuestra conserva el viejo.** Actualizarlo solo podría chocar con la llave única de `users.email`.
+- **Las cuentas de Google con letras fuera de ASCII en el correo no pueden ingresar** (401 `invalid_token`). Se rechazan a propósito, para que el `lower()` de PostgreSQL y el de JavaScript no discrepen a mitad de un ingreso.
+- **Un cuerpo de más de 100 KB responde 500 `INTERNAL_ERROR`**, en este endpoint y en los demás POST, y se lee antes de que el limitador lo cuente. Debería ser un 413. No se tocó en este bloque.
+- **La app de Google está en modo Prueba** hasta que exista la página de privacidad (ver arriba).
+- Las dos dependencias indirectas `gcp-metadata` y `google-logging-utils` están fijadas en `overrides` de `package.json` porque sus versiones más nuevas tenían menos de dos semanas al instalarlas; se pueden quitar en el siguiente bloque de dependencias.
 - `sessions.ip_address` queda sin uso.
 - No hay borrado automático de registros viejos en `auth_logs`: Render gratuito no tiene tareas programadas.
 - Los restos de sesiones de una cuenta abandonada (como máximo 5 por cuenta) se borran cuando esa persona vuelve a ingresar.

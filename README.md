@@ -40,10 +40,13 @@ El archivo `.env` está en `.gitignore` y **nunca** se sube a GitHub. Si falta u
 | `CORS_ORIGIN`          | Orígenes del frontend permitidos, separados por comas                                                                                           |
 | `INTERNAL_TOKEN`       | Opcional. Token compartido con el servicio de IA (mínimo 32 caracteres); vacío apaga `/internal/*`                                              |
 | `AI_SERVICE_URL`       | Opcional. Dirección del servicio de IA que calcula las rutas; en producción debe empezar por `https://`                                         |
+| `GOOGLE_CLIENT_ID`     | Opcional. ID de cliente de la app de Google que da el ingreso (termina en `.apps.googleusercontent.com`); vacío apaga el ingreso con Google     |
 | `ROUTE_CACHE_CAPACITY` | Opcional. Cuántas rutas guarda la caché LRU (por defecto 200, entre 1 y 10.000)                                                                 |
 | `TEST_DATABASE_URL`    | Opcional. Solo para las pruebas con PostgreSQL real: una base en tu computador cuyo nombre termina en `_test` (ver "Pruebas con base de datos") |
 
 Sin `AI_SERVICE_URL` o sin `INTERNAL_TOKEN`, `POST /api/routes` responde 503 y el resto de la API funciona igual; el servidor lo avisa al arrancar.
+
+Sin `GOOGLE_CLIENT_ID`, `POST /api/auth/google` responde 503 `AUTH_NOT_CONFIGURED` y el resto de la API funciona igual; el servidor también lo avisa al arrancar. El ID de cliente es público (el frontend usa el mismo), pero el **secreto del cliente no se usa en este proyecto y nunca se escribe aquí**: el formato del valor se revisa para que no se pegue por error.
 
 Para generar `INTERNAL_TOKEN` (64 caracteres aleatorios):
 
@@ -82,6 +85,7 @@ El mismo valor va en el backend y en el servicio de IA. Nunca se escribe en `.en
 | GET    | `/api/potholes`           | Los baches como GeoJSON; `?includeRepaired=true` incluye los reparados                   |
 | GET    | `/api/road-network/stats` | Totales y leyenda del mapa                                                               |
 | POST   | `/api/routes`             | Ruta entre dos puntos del mapa, lista para dibujar (ver "Rutas" más abajo)               |
+| POST   | `/api/auth/google`        | Ingreso con Google: recibe el token de Google y entrega una sesión (ver "Ingreso")       |
 
 Los errores siempre responden en JSON con la forma `{ "error": { "code", "message" } }`, y algunos agregan `details` con datos para el frontend.
 
@@ -129,6 +133,30 @@ Cómo funciona por dentro:
 
 Las rutas no se guardan en la base de datos (`route_requests` y `route_steps` quedan para la Etapa 3), y hay un límite de 30 peticiones de ruta por minuto por dirección IP, que reutiliza la caché LRU para llevar la cuenta de cada dirección. En Render la dirección del cliente se toma del encabezado `True-Client-IP`, que escribe Cloudflare (el servicio que Render tiene delante) con la IP real, reemplazando cualquier valor que mande el cliente; en un computador, sin ese encabezado, se usa la dirección de la conexión. No se usa `X-Forwarded-For`, porque la petición pasa por varios intermediarios de Render y su cantidad no está documentada.
 
+### Ingreso con Google (para el frontend)
+
+`POST /api/auth/google` recibe el token que el botón de Google le da al frontend y entrega una sesión. Los detalles están en `docs/AUTENTICACION.md`.
+
+```json
+{ "credential": "<token de Google>" }
+```
+
+```json
+{
+  "token": "<identificador de 43 caracteres, se muestra una sola vez>",
+  "expiresAt": "2026-11-17T12:00:00.000Z",
+  "user": {
+    "id": "…",
+    "email": "…",
+    "fullName": "…",
+    "avatarUrl": "https://…",
+    "roles": ["usuario"]
+  }
+}
+```
+
+El `token` se manda después en cada petición protegida como `Authorization: Bearer <token>`. Errores: 400 `INVALID_REQUEST`, 401 `INVALID_GOOGLE_TOKEN` (siempre el mismo mensaje, sea cual sea el motivo), 403 `ACCOUNT_DISABLED`, 429 (más de 10 intentos por minuto y dirección IP, con `Retry-After`) y 503 (`AUTH_PROVIDER_UNAVAILABLE`, `AUTH_NOT_CONFIGURED` o `DATABASE_UNAVAILABLE`). Los 503 no cierran nada: el frontend reintenta.
+
 ### Endpoint interno
 
 Solo lo usa el servicio de IA para calcular rutas. No está en la lista de `GET /` y necesita el encabezado `Authorization: Bearer <INTERNAL_TOKEN>`.
@@ -171,7 +199,7 @@ database/              Scripts SQL, diagrama entidad-relación y su README
 docs/                  Guías de uso, como la importación de la red vial
 prisma/                Esquema de Prisma (generado con npm run db:pull)
 src/
-├── auth/              Reglas de las sesiones: duración, identificador y datos que se guardan
+├── auth/              Sesiones (duración, identificador, datos que se guardan) e ingreso con Google (verificador del token, identidad, nombre y foto)
 ├── config/            Variables de entorno y conexión única a la base (Singleton)
 ├── controllers/       Reciben la petición y responden con el código HTTP correcto
 ├── docs/              Documento OpenAPI que muestra Swagger
@@ -186,14 +214,14 @@ src/
 ├── seed/              Baches de prueba: generador, corredores, plan y protecciones
 ├── services/          Lógica de negocio
 ├── structures/        Estructuras escritas a mano: tabla hash, lista doble y caché LRU
-├── test/              Apoyo para las pruebas que usan PostgreSQL (con sus protecciones)
+├── test/              Apoyo para las pruebas: base PostgreSQL (con sus protecciones) y claves que hacen de Google
 ├── app.ts             Configuración de Express
 └── server.ts          Punto de entrada: inicia el servidor
 ```
 
 ## Pruebas con base de datos
 
-`npm test` corre sin ninguna base. Las pruebas que revisan el SQL de verdad (sesiones, registros de acceso y la migración 08) se omiten solas si no existe `TEST_DATABASE_URL`. Ver `docs/AUTENTICACION.md`.
+`npm test` corre sin ninguna base. Las pruebas que revisan el SQL de verdad (sesiones, registros de acceso, cuentas, el ingreso con Google y la migración 08) se omiten solas si no existe `TEST_DATABASE_URL`. Ver `docs/AUTENTICACION.md`.
 
 Para activarlas, una sola vez en tu computador:
 
@@ -202,6 +230,8 @@ Para activarlas, una sola vez en tu computador:
 3. Agrega a tu `.env`: `TEST_DATABASE_URL=postgresql://postgres:TU_CONTRASEÑA@localhost:5432/urban_road_monitor_test`.
 
 Protecciones: estas pruebas vacían tablas, así que solo aceptan una base en `localhost` cuyo nombre termine en `_test`. Una dirección de Neon o de otra base se rechaza antes de conectar. Solo `TEST_DATABASE_URL` se lee del `.env` para las pruebas; el `DATABASE_URL` real nunca llega a ellas.
+
+Las pruebas del ingreso con Google tampoco tocan Google: firman los tokens con una clave que se crea en el momento (`src/test/google-test-keys.ts`) y le dan esa clave a la librería real de Google, así que la verificación de la firma, de la audiencia y del vencimiento es la verdadera.
 
 Los archivos de prueba corren uno tras otro (`fileParallelism: false` en `vitest.config.ts`): comparten esa base y la vacían antes de cada prueba, así que en paralelo un archivo borraría los datos que otro está usando.
 
@@ -223,6 +253,7 @@ Variables que se configuran en el panel de Render (no van en el repositorio):
 | `CORS_ORIGIN`          | URL del frontend en Vercel                                                                              |
 | `INTERNAL_TOKEN`       | Token compartido con el servicio de IA. Mientras no se configure, `/internal/graph` responde 404        |
 | `AI_SERVICE_URL`       | `https://urban-road-monitor-ai.onrender.com`. Mientras no se configure, `POST /api/routes` responde 503 |
+| `GOOGLE_CLIENT_ID`     | ID de cliente de la app de Google. Mientras no se configure, `POST /api/auth/google` responde 503       |
 | `ROUTE_CACHE_CAPACITY` | Opcional; 200 si no se configura                                                                        |
 
 Cada `push` a `main` vuelve a desplegar el servicio si tiene activado Auto-Deploy; si no, se despliega con **Manual Deploy** desde el panel de Render.
