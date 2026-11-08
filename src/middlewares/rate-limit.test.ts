@@ -56,6 +56,29 @@ describe('createRateLimit', () => {
     }
   });
 
+  it('uses the message it is given and keeps the rest of the 429 answer', async () => {
+    const { ask, close } = await withApp({
+      limit: 1,
+      message: (limit) => `Too many sign-in attempts: the limit is ${limit} per minute`,
+    });
+    try {
+      await ask('190.0.0.1');
+      const blocked = await ask('190.0.0.1');
+
+      expect(blocked.status).toBe(429);
+      expect(blocked.headers.get('retry-after')).toBe('60');
+      expect(await blocked.json()).toEqual({
+        error: {
+          code: 'TOO_MANY_REQUESTS',
+          message: 'Too many sign-in attempts: the limit is 1 per minute',
+          details: { retryAfterS: 60 },
+        },
+      });
+    } finally {
+      await close();
+    }
+  });
+
   it('counts each address apart', async () => {
     const { ask, close } = await withApp({ limit: 2 });
     try {

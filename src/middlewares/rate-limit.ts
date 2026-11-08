@@ -3,7 +3,8 @@ import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { LruCache } from '../structures/lru-cache.js';
 
 /**
- * Limit of requests per IP address and minute, for POST /api/routes.
+ * Limit of requests per IP address and minute. POST /api/routes uses it with 30 per minute;
+ * other endpoints can have their own instance (each one counts apart) and their own message.
  *
  * Each address gets a one-minute window that starts with its first request. The windows
  * live in the LRU cache of the route cache (the same structure, reused), with room for
@@ -36,12 +37,19 @@ interface Window {
   readonly count: number;
 }
 
+/** The text of the 429 answer for a limit of `limit` requests per minute. */
+function routeLimitMessage(limit: number): string {
+  return `Too many route requests: the limit is ${limit} per minute`;
+}
+
 export interface RateLimitOptions {
   limit?: number;
   windowMs?: number;
   capacity?: number;
   now?: () => number;
   addressOf?: (req: Request) => string;
+  /** Builds the text of the 429 answer; by default it talks about route requests. */
+  message?: (limit: number) => string;
 }
 
 export function createRateLimit({
@@ -50,6 +58,7 @@ export function createRateLimit({
   capacity = TRACKED_ADDRESSES,
   now = Date.now,
   addressOf = clientAddress,
+  message = routeLimitMessage,
 }: RateLimitOptions = {}): RequestHandler {
   const windows = new LruCache<Window>(capacity);
 
@@ -72,7 +81,7 @@ export function createRateLimit({
         .json({
           error: {
             code: 'TOO_MANY_REQUESTS',
-            message: `Too many route requests: the limit is ${limit} per minute`,
+            message: message(limit),
             details: { retryAfterS },
           },
         });
