@@ -30,6 +30,7 @@
     "compression": "1.8.2",
     "cors": "2.8.6",
     "express": "5.2.1",
+    "google-auth-library": "11.3.1",
     "swagger-ui-express": "5.0.1",
     "zod": "4.6.6"
   },
@@ -49,5 +50,9 @@
     "typescript": "6.0.3",
     "typescript-eslint": "8.71.0",
     "vitest": "4.1.11"
+  },
+  "overrides": {
+    "gcp-metadata": "9.2.2",
+    "google-logging-utils": "2.1.0"
   }
 }
