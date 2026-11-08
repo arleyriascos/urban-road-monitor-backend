@@ -1,6 +1,7 @@
 import { createApp } from './app.js';
 import { disconnectDatabase } from './config/database.js';
 import { env } from './config/env.js';
+import { googleLoginService } from './services/google-login.service.js';
 import { routeService } from './services/route.service.js';
 
 const app = createApp();
@@ -10,6 +11,11 @@ const server = app.listen(env.PORT, () => {
   if (!routeService.isConfigured) {
     console.warn(
       'POST /api/routes answers 503: set AI_SERVICE_URL and INTERNAL_TOKEN to enable routes',
+    );
+  }
+  if (!googleLoginService.isConfigured) {
+    console.warn(
+      'POST /api/auth/google answers 503: set GOOGLE_CLIENT_ID to enable Google sign-in',
     );
   }
 });

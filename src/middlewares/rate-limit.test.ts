@@ -1,7 +1,13 @@
 import type { AddressInfo } from 'node:net';
 import express from 'express';
 import { describe, expect, it } from 'vitest';
-import { clientAddress, createRateLimit, ROUTE_REQUESTS_PER_MINUTE } from './rate-limit.js';
+import {
+  LOGIN_ATTEMPTS_PER_MINUTE,
+  clientAddress,
+  createRateLimit,
+  loginRateLimit,
+  ROUTE_REQUESTS_PER_MINUTE,
+} from './rate-limit.js';
 
 function clock() {
   let time = 1_000_000;
@@ -164,5 +170,40 @@ describe('clientAddress', () => {
 
   it('uses the connection address without the header', () => {
     expect(clientAddress(request({}))).toBe('10.0.0.5');
+  });
+});
+
+describe('the limits of the application', () => {
+  it('lets 10 sign-in attempts a minute through, against 30 route requests', () => {
+    expect(LOGIN_ATTEMPTS_PER_MINUTE).toBe(10);
+    expect(ROUTE_REQUESTS_PER_MINUTE).toBe(30);
+    expect(LOGIN_ATTEMPTS_PER_MINUTE).toBeLessThan(ROUTE_REQUESTS_PER_MINUTE);
+  });
+
+  it('keeps the sign-in limiter apart from the route limiter, so neither spends the other', async () => {
+    const app = express();
+    app.post('/login', loginRateLimit, (_req, res) => {
+      res.status(200).json({ ok: true });
+    });
+    app.post('/routes', createRateLimit({ limit: 1000 }), (_req, res) => {
+      res.status(200).json({ ok: true });
+    });
+    const server = app.listen(0);
+    await new Promise((resolve) => server.once('listening', resolve));
+    const { port } = server.address() as AddressInfo;
+    const ask = (path: string) =>
+      fetch(`http://localhost:${port}${path}`, {
+        method: 'POST',
+        headers: { 'true-client-ip': '192.0.2.200' },
+      });
+    try {
+      for (let i = 0; i < LOGIN_ATTEMPTS_PER_MINUTE; i += 1) {
+        expect((await ask('/login')).status).toBe(200);
+      }
+      expect((await ask('/login')).status).toBe(429);
+      expect((await ask('/routes')).status).toBe(200);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 });

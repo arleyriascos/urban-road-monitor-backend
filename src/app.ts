@@ -30,6 +30,7 @@ export function createApp() {
         '/api/potholes',
         '/api/road-network/stats',
         'POST /api/routes',
+        'POST /api/auth/google',
       ],
     });
   });

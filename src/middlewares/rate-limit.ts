@@ -92,3 +92,11 @@ export function createRateLimit({
 }
 
 export const routeRateLimit = createRateLimit();
+
+/** Sign-in attempts per IP address and minute (POST /api/auth/google). Counted apart from routes. */
+export const LOGIN_ATTEMPTS_PER_MINUTE = 10;
+
+export const loginRateLimit = createRateLimit({
+  limit: LOGIN_ATTEMPTS_PER_MINUTE,
+  message: (limit) => `Too many sign-in attempts: the limit is ${limit} per minute`,
+});
