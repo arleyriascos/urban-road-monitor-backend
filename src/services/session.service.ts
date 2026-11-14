@@ -127,6 +127,34 @@ export class SessionService {
     }
   }
 
+  /**
+   * Closes the session of a person who asked to sign out, and writes the logout. Only that
+   * session closes: their other sessions (another phone, another browser) stay open.
+   * It answers false if the session had already stopped working a moment ago, in which case
+   * nothing is written. A log that cannot be written does not undo the logout.
+   */
+  async logout(
+    session: Pick<AuthContext, 'sessionId' | 'userId'>,
+    request: RequestContext = {},
+  ): Promise<boolean> {
+    const closed = await this.revoke(session.sessionId);
+    if (!closed) {
+      return false;
+    }
+    try {
+      await this.logs.record({
+        userId: session.userId,
+        eventType: 'logout',
+        success: true,
+        userAgent: request.userAgent,
+        now: this.now(),
+      });
+    } catch (error) {
+      console.error('Could not write the auth log:', error);
+    }
+    return true;
+  }
+
   private async logRejection(
     record: SessionRecord,
     reason: SessionRejection,

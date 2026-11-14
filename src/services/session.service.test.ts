@@ -206,3 +206,58 @@ describe('SessionService.revoke', () => {
     await expect(service.revoke('session-1')).rejects.toMatchObject({ statusCode: 503 });
   });
 });
+
+describe('SessionService.logout', () => {
+  const session = { sessionId: 'session-1', userId: 'user-1' };
+
+  it('revokes that one session and writes a successful logout of that person', async () => {
+    const { sessions, logs, service } = setup();
+
+    expect(await service.logout(session, { userAgent: 'Chrome en Android' })).toBe(true);
+
+    expect(sessions.revoke).toHaveBeenCalledTimes(1);
+    expect(sessions.revoke).toHaveBeenCalledWith('session-1', NOW);
+    expect(logs.record).toHaveBeenCalledTimes(1);
+    expect(logs.record).toHaveBeenCalledWith({
+      userId: 'user-1',
+      eventType: 'logout',
+      success: true,
+      userAgent: 'Chrome en Android',
+      now: NOW,
+    });
+  });
+
+  it('does not give the log the address of the client: a success keeps none', async () => {
+    const { logs, service } = setup();
+    await service.logout(session, { userAgent: 'Chrome', ip: '203.0.113.77' });
+
+    expect(logs.record.mock.calls[0]).toBeDefined();
+    expect(JSON.stringify(logs.record.mock.calls)).not.toContain('203.0.113.77');
+  });
+
+  it('answers false and writes nothing when the session had already stopped working', async () => {
+    const { sessions, logs, service } = setup();
+    sessions.revoke.mockResolvedValueOnce(false);
+
+    expect(await service.logout(session)).toBe(false);
+    expect(logs.record).not.toHaveBeenCalled();
+  });
+
+  it('answers 503 and writes nothing when the database fails', async () => {
+    const { sessions, logs, service } = setup();
+    sessions.revoke.mockRejectedValueOnce(new Error('connection refused'));
+
+    await expect(service.logout(session)).rejects.toMatchObject({
+      statusCode: 503,
+      code: 'DATABASE_UNAVAILABLE',
+    });
+    expect(logs.record).not.toHaveBeenCalled();
+  });
+
+  it('still closes the session when the log cannot be written', async () => {
+    const { logs, service } = setup();
+    logs.record.mockRejectedValueOnce(new Error('disk full'));
+
+    expect(await service.logout(session)).toBe(true);
+  });
+});
