@@ -5,6 +5,8 @@ describe('openApiDocument', () => {
   it('lists the health, map, route, auth and internal endpoints', () => {
     expect(Object.keys(openApiDocument.paths).sort()).toEqual([
       '/api/auth/google',
+      '/api/auth/logout',
+      '/api/auth/me',
       '/api/health',
       '/api/hello',
       '/api/potholes',
@@ -32,6 +34,13 @@ describe('openApiDocument', () => {
     });
   });
 
+  it('declares the session bearer scheme next to the internal one', () => {
+    expect(Object.keys(openApiDocument.components.securitySchemes).sort()).toEqual([
+      'internalToken',
+      'sessionToken',
+    ]);
+  });
+
   it('keeps the existing schemas and adds the map schemas', () => {
     const schemas = Object.keys(openApiDocument.components.schemas);
     expect(schemas).toEqual(
@@ -47,6 +56,8 @@ describe('openApiDocument', () => {
         'GoogleLoginRequest',
         'GoogleLoginAnswer',
         'AuthUser',
+        'AccountProfile',
+        'MeAnswer',
       ]),
     );
   });

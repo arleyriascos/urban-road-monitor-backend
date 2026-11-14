@@ -1,17 +1,48 @@
 import { describe, expect, it } from 'vitest';
 import { googleLoginSchema } from '../controllers/auth.controller.js';
 import { LOGIN_ATTEMPTS_PER_MINUTE } from '../middlewares/rate-limit.js';
-import { authPaths, authSchemas, authTags } from './auth-openapi.js';
+import { authPaths, authSchemas, authSecuritySchemes, authTags } from './auth-openapi.js';
 import { openApiDocument } from './openapi.js';
 
 const post = authPaths['/api/auth/google'].post;
 
 describe('auth documentation', () => {
-  it('describes one endpoint, a POST, under the Auth tag', () => {
-    expect(Object.keys(authPaths)).toEqual(['/api/auth/google']);
+  it('describes three endpoints under the Auth tag', () => {
+    expect(Object.keys(authPaths).sort()).toEqual([
+      '/api/auth/google',
+      '/api/auth/logout',
+      '/api/auth/me',
+    ]);
     expect(Object.keys(authPaths['/api/auth/google'])).toEqual(['post']);
+    expect(Object.keys(authPaths['/api/auth/me'])).toEqual(['get']);
+    expect(Object.keys(authPaths['/api/auth/logout'])).toEqual(['post']);
     expect(post.tags).toEqual(['Auth']);
+    expect(authPaths['/api/auth/me'].get.tags).toEqual(['Auth']);
+    expect(authPaths['/api/auth/logout'].post.tags).toEqual(['Auth']);
     expect(authTags.map((tag) => tag.name)).toEqual(['Auth']);
+  });
+
+  it('asks for the session only where the backend asks for it', () => {
+    expect(authPaths['/api/auth/me'].get.security).toEqual([{ sessionToken: [] }]);
+    expect(authPaths['/api/auth/logout'].post.security).toEqual([{ sessionToken: [] }]);
+    expect('security' in post).toBe(false);
+    expect(Object.keys(authSecuritySchemes)).toEqual(['sessionToken']);
+  });
+
+  it('documents the answers of /me and /logout', () => {
+    const me = authPaths['/api/auth/me'].get.responses;
+    const out = authPaths['/api/auth/logout'].post.responses;
+    expect(Object.keys(me).sort()).toEqual(['200', '401', '503']);
+    expect(Object.keys(out).sort()).toEqual(['204', '401', '503']);
+    expect(me[401].description).toContain('UNAUTHORIZED');
+    expect(me[503].description).toContain('DATABASE_UNAVAILABLE');
+    expect(out[401].description).toContain('UNAUTHORIZED');
+  });
+
+  it('lists the permissions in the profile, after the five fields of the person', () => {
+    expect(authSchemas.AccountProfile.required).toEqual(['permissions']);
+    expect(authSchemas.AccountProfile.allOf).toEqual([{ $ref: '#/components/schemas/AuthUser' }]);
+    expect(authSchemas.MeAnswer.required).toEqual(['user']);
   });
 
   it('documents every answer the endpoint gives', () => {
@@ -74,6 +105,8 @@ describe('auth documentation', () => {
 
   it('is part of the main document, with its schemas', () => {
     expect(openApiDocument.paths['/api/auth/google']).toBe(authPaths['/api/auth/google']);
+    expect(openApiDocument.paths['/api/auth/me']).toBe(authPaths['/api/auth/me']);
+    expect(openApiDocument.paths['/api/auth/logout']).toBe(authPaths['/api/auth/logout']);
     const schemas = Object.keys(openApiDocument.components.schemas);
     expect(schemas).toEqual(
       expect.arrayContaining(['GoogleLoginRequest', 'GoogleLoginAnswer', 'AuthUser']),

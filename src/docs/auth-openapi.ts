@@ -1,8 +1,9 @@
 import { LOGIN_ATTEMPTS_PER_MINUTE } from '../middlewares/rate-limit.js';
 
 /**
- * OpenAPI description of POST /api/auth/google, the sign-in with Google. It is spread into the
- * main document (openapi.ts).
+ * OpenAPI description of the sign-in with Google (POST /api/auth/google), of asking who the
+ * session belongs to (GET /api/auth/me) and of signing out (POST /api/auth/logout). It is
+ * spread into the main document (openapi.ts).
  */
 const errorResponse = (description: string) => ({
   description,
@@ -13,12 +14,22 @@ export const authTags = [
   {
     name: 'Auth',
     description:
-      'Sign-in with Google. The frontend sends the ID token that the Google button gives it and ' +
-      'receives a session identifier, which it sends in every protected request as ' +
-      '"Authorization: Bearer <identifier>". ' +
-      `At most ${LOGIN_ATTEMPTS_PER_MINUTE} attempts per minute and IP address.`,
+      'Sign-in with Google, who I am, and sign-out. The frontend sends the ID token that the ' +
+      'Google button gives it and receives a session identifier, which it sends in every ' +
+      'protected request as "Authorization: Bearer <identifier>". ' +
+      `Signing in: at most ${LOGIN_ATTEMPTS_PER_MINUTE} attempts per minute and IP address.`,
   },
 ];
+
+export const authSecuritySchemes = {
+  sessionToken: {
+    type: 'http',
+    scheme: 'bearer',
+    description:
+      'The session identifier that POST /api/auth/google gives. Without a valid session ' +
+      'every request that needs one gets the same 401, whatever the reason.',
+  },
+};
 
 export const authSchemas = {
   GoogleLoginRequest: {
@@ -58,6 +69,29 @@ export const authSchemas = {
       },
     },
     required: ['id', 'email', 'fullName', 'avatarUrl', 'roles'],
+  },
+  AccountProfile: {
+    type: 'object',
+    description:
+      'The signed-in person like the sign-in answers it, plus what their roles let them do.',
+    allOf: [{ $ref: '#/components/schemas/AuthUser' }],
+    properties: {
+      permissions: {
+        type: 'array',
+        items: { type: 'string', example: 'detections.create' },
+        description:
+          'The codes of the permissions that their roles give, in alphabetical order. ' +
+          'A person with only "usuario" has none. They are read at every request, so a role ' +
+          'that was just given or taken away shows here at once.',
+        example: ['detections.create', 'routes.view_history'],
+      },
+    },
+    required: ['permissions'],
+  },
+  MeAnswer: {
+    type: 'object',
+    properties: { user: { $ref: '#/components/schemas/AccountProfile' } },
+    required: ['user'],
   },
   GoogleLoginAnswer: {
     type: 'object',
@@ -125,6 +159,50 @@ export const authPaths = {
           'AUTH_PROVIDER_UNAVAILABLE (Google could not be reached to check the token: try again), ' +
             'AUTH_NOT_CONFIGURED (the server has no GOOGLE_CLIENT_ID) or DATABASE_UNAVAILABLE',
         ),
+      },
+    },
+  },
+  '/api/auth/me': {
+    get: {
+      tags: ['Auth'],
+      summary: 'Who the current session belongs to',
+      description:
+        'Gives the person of the session in the request, with their roles and the permissions ' +
+        'those roles give. The frontend calls it when the page opens with a saved identifier, ' +
+        'to know whether the session still lives. It is sent with "Cache-Control: no-store".',
+      security: [{ sessionToken: [] }],
+      responses: {
+        200: {
+          description: 'The person, with their roles and permissions.',
+          content: { 'application/json': { schema: { $ref: '#/components/schemas/MeAnswer' } } },
+        },
+        401: errorResponse(
+          'UNAUTHORIZED: no session, or one that does not exist, has expired, was closed, or ' +
+            'belongs to a deactivated account. The message is always the same.',
+        ),
+        503: errorResponse(
+          'DATABASE_UNAVAILABLE: the session could not be checked. It is never a 401: the ' +
+            'frontend must keep the session and try again.',
+        ),
+      },
+    },
+  },
+  '/api/auth/logout': {
+    post: {
+      tags: ['Auth'],
+      summary: 'Sign out: close the current session',
+      description:
+        'Closes the session that makes the request, and only that one: the same person on ' +
+        'another device stays signed in. The sign-out is noted in the audit log as "logout". ' +
+        'The request has no body.',
+      security: [{ sessionToken: [] }],
+      responses: {
+        204: { description: 'The session was closed. There is no body.' },
+        401: errorResponse(
+          'UNAUTHORIZED: there was no valid session, so there was nothing to close (for ' +
+            'example, it was already closed).',
+        ),
+        503: errorResponse('DATABASE_UNAVAILABLE: the session could not be checked or closed'),
       },
     },
   },

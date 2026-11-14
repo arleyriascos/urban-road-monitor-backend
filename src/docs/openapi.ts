@@ -1,4 +1,4 @@
-import { authPaths, authSchemas, authTags } from './auth-openapi.js';
+import { authPaths, authSchemas, authSecuritySchemes, authTags } from './auth-openapi.js';
 import {
   internalPaths,
   internalSchemas,
@@ -88,7 +88,7 @@ export const openApiDocument = {
     },
   },
   components: {
-    securitySchemes: internalSecuritySchemes,
+    securitySchemes: { ...internalSecuritySchemes, ...authSecuritySchemes },
     schemas: {
       ...mapSchemas,
       ...routeSchemas,
