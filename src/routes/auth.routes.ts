@@ -8,7 +8,7 @@ import { requireSession } from '../middlewares/require-session.js';
  * be given so the tests can use their own; the application uses the real ones.
  */
 export function createAuthRouter(
-  controller: Pick<AuthController, 'loginWithGoogle' | 'me'> = authController,
+  controller: Pick<AuthController, 'loginWithGoogle' | 'me' | 'logout'> = authController,
   rateLimit: RequestHandler = loginRateLimit,
   session: RequestHandler = requireSession(),
 ): Router {
@@ -17,6 +17,8 @@ export function createAuthRouter(
   router.post('/auth/google', rateLimit, controller.loginWithGoogle);
   // Who the current session belongs to. Only this route and the ones below need a session.
   router.get('/auth/me', session, controller.me);
+  // Closes the session that makes the request, and only that one.
+  router.post('/auth/logout', session, controller.logout);
   return router;
 }
 

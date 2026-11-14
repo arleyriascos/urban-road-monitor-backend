@@ -36,6 +36,7 @@ export function createApp() {
         'POST /api/routes',
         'POST /api/auth/google',
         'GET /api/auth/me',
+        'POST /api/auth/logout',
       ],
     });
   });

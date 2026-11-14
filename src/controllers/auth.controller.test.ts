@@ -342,3 +342,142 @@ describe('GET /api/auth/me in the whole application', () => {
     }
   });
 });
+
+describe('POST /api/auth/logout', () => {
+  type Logout = SessionService['logout'];
+  type Authenticate = SessionService['authenticate'];
+
+  const TOKEN = 'T'.repeat(43);
+  const session: AuthContext = {
+    sessionId: 'session-1',
+    userId: '5f0b3c2e-0000-4000-8000-000000000001',
+    email: 'ana@example.com',
+    fullName: 'Ana Pérez',
+  };
+
+  function appWithLogout(logout: Logout, authenticated: AuthContext | null = session): Express {
+    const authenticate = vi.fn<Authenticate>(async () => authenticated);
+    const app = express();
+    app.use(express.json());
+    app.use(
+      '/api',
+      createAuthRouter(
+        new AuthController({ login: vi.fn<Login>() }, { profile: vi.fn() }, { logout }),
+        (_req, _res, next) => next(),
+        requireSession({ authenticate }),
+      ),
+    );
+    app.use(errorHandler);
+    return app;
+  }
+
+  async function postLogout(app: Express, headers: Record<string, string> = {}) {
+    const server = app.listen(0);
+    await new Promise((resolve) => server.once('listening', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const response = await fetch(`http://localhost:${port}/api/auth/logout`, {
+        method: 'POST',
+        headers,
+      });
+      return { response, text: await response.text() };
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  }
+
+  const bearer = { authorization: `Bearer ${TOKEN}` };
+
+  it('closes the session and answers 204 with no body and no cache', async () => {
+    const { response, text } = await postLogout(
+      appWithLogout(vi.fn<Logout>(async () => true)),
+      bearer,
+    );
+
+    expect(response.status).toBe(204);
+    expect(text).toBe('');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('closes only the session of the request, and passes the user agent and the address', async () => {
+    const logout = vi.fn<Logout>(async () => true);
+    await postLogout(appWithLogout(logout), {
+      ...bearer,
+      'user-agent': 'Chrome en Android',
+      'true-client-ip': '203.0.113.77',
+    });
+
+    expect(logout).toHaveBeenCalledTimes(1);
+    expect(logout).toHaveBeenCalledWith(
+      { sessionId: 'session-1', userId: session.userId },
+      { userAgent: 'Chrome en Android', ip: '203.0.113.77' },
+    );
+  });
+
+  it('does not give the service the email or the name of the person', async () => {
+    const logout = vi.fn<Logout>(async () => true);
+    await postLogout(appWithLogout(logout), bearer);
+
+    expect(JSON.stringify(logout.mock.calls)).not.toContain('ana@example.com');
+  });
+
+  it('answers the usual 401 without a session and closes nothing', async () => {
+    const logout = vi.fn<Logout>(async () => true);
+    const { response, text } = await postLogout(appWithLogout(logout, null), bearer);
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get('www-authenticate')).toBe('Bearer realm="session"');
+    expect(JSON.parse(text).error.code).toBe('UNAUTHORIZED');
+    expect(logout).not.toHaveBeenCalled();
+  });
+
+  it('answers the usual 401 when the session stopped working a moment before', async () => {
+    const { response, text } = await postLogout(
+      appWithLogout(vi.fn<Logout>(async () => false)),
+      bearer,
+    );
+
+    expect(response.status).toBe(401);
+    expect(JSON.parse(text).error.code).toBe('UNAUTHORIZED');
+  });
+
+  it('answers 503 when the database does not answer, and the frontend may try again', async () => {
+    const logout = vi.fn<Logout>(async () => {
+      throw new AppError(503, 'DATABASE_UNAVAILABLE', 'The database is not available right now');
+    });
+    const { response, text } = await postLogout(appWithLogout(logout), bearer);
+
+    expect(response.status).toBe(503);
+    expect(JSON.parse(text).error.code).toBe('DATABASE_UNAVAILABLE');
+  });
+});
+
+describe('POST /api/auth/logout in the whole application', () => {
+  it('is mounted and answers 401 without a session', async () => {
+    const server = createApp().listen(0);
+    await new Promise((resolve) => server.once('listening', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const response = await fetch(`http://localhost:${port}/api/auth/logout`, {
+        method: 'POST',
+      });
+      expect(response.status).toBe(401);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  it('is listed in the root of the API', async () => {
+    const server = createApp().listen(0);
+    await new Promise((resolve) => server.once('listening', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const body = (await (await fetch(`http://localhost:${port}/`)).json()) as {
+        endpoints: string[];
+      };
+      expect(body.endpoints).toContain('POST /api/auth/logout');
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});

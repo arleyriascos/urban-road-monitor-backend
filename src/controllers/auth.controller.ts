@@ -5,6 +5,7 @@ import { clientAddress } from '../middlewares/rate-limit.js';
 import { getAuth, sendUnauthorized } from '../middlewares/require-session.js';
 import { accountService, type AccountService } from '../services/account.service.js';
 import { googleLoginService, type GoogleLoginService } from '../services/google-login.service.js';
+import { sessionService, type SessionService } from '../services/session.service.js';
 
 /**
  * The body of POST /api/auth/google. An ID token is a JWT of about 1,000 to 1,500 characters;
@@ -20,12 +21,14 @@ export const googleLoginSchema = z.object({
 
 /**
  * The endpoints of the sign-in: POST /api/auth/google validates the body and answers the new
- * session and the person, and GET /api/auth/me tells who the current session belongs to.
+ * session and the person, GET /api/auth/me tells who the current session belongs to, and
+ * POST /api/auth/logout closes it.
  */
 export class AuthController {
   constructor(
     private readonly service: Pick<GoogleLoginService, 'login'> = googleLoginService,
     private readonly accounts: Pick<AccountService, 'profile'> = accountService,
+    private readonly sessions: Pick<SessionService, 'logout'> = sessionService,
   ) {}
 
   loginWithGoogle = async (req: Request, res: Response) => {
@@ -66,6 +69,25 @@ export class AuthController {
       return;
     }
     res.set('Cache-Control', 'no-store').status(200).json({ user: profile });
+  };
+
+  /**
+   * POST /api/auth/logout, behind requireSession: closes the session that made the request
+   * (and only that one) and answers 204. The sessions of the same person on other devices
+   * stay open. The identifier stops working at that very instant.
+   */
+  logout = async (req: Request, res: Response) => {
+    const { sessionId, userId } = getAuth(res);
+    const closed = await this.sessions.logout(
+      { sessionId, userId },
+      { userAgent: req.get('user-agent'), ip: clientAddress(req) },
+    );
+    if (!closed) {
+      // It stopped working between the check and now: the same 401 as any other dead session.
+      sendUnauthorized(res);
+      return;
+    }
+    res.set('Cache-Control', 'no-store').status(204).end();
   };
 }
 
