@@ -126,14 +126,27 @@ export class UserRepository {
 
     const sameEmail = await tx.users.findUnique({
       where: { email: input.email },
-      select: { ...ACCOUNT_FIELDS, oauth_accounts: { where: { provider: GOOGLE }, take: 1 } },
+      select: {
+        ...ACCOUNT_FIELDS,
+        oauth_accounts: {
+          where: { provider: GOOGLE },
+          take: 1,
+          select: { provider_account_id: true },
+        },
+      },
     });
     if (sameEmail) {
       if (!isActive(sameEmail)) {
         return { kind: 'inactive', userId: sameEmail.id };
       }
-      if (sameEmail.oauth_accounts.length > 0) {
-        return { kind: 'email_conflict' };
+      const [linked] = sameEmail.oauth_accounts;
+      if (linked) {
+        // The same Google identity: another sign-in of this person finished between the two
+        // lookups above, so this IS the person, signing in again. A DIFFERENT identity linked
+        // to this email is the real conflict: the address may have passed to someone else.
+        return linked.provider_account_id === input.subject
+          ? this.enter(tx, sameEmail, input, { created: false, linked: false })
+          : { kind: 'email_conflict' };
       }
       await tx.oauth_accounts.create({
         data: { user_id: sameEmail.id, provider: GOOGLE, provider_account_id: input.subject },
