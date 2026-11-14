@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { AppError } from '../errors/app-error.js';
 import type { AuthContext, SessionService } from '../services/session.service.js';
 import { errorHandler } from './error-handler.js';
-import { getAuth, requireSession } from './require-session.js';
+import { authenticateRequest, getAuth, requireSession } from './require-session.js';
 
 type Authenticate = SessionService['authenticate'];
 
@@ -135,5 +135,50 @@ describe('getAuth', () => {
   it('fails loudly on a route that does not use requireSession', () => {
     const res = { locals: {} } as unknown as Parameters<typeof getAuth>[0];
     expect(() => getAuth(res)).toThrow('requireSession');
+  });
+});
+
+describe('authenticateRequest', () => {
+  /** A route that uses the function by hand and answers by itself when the session is good. */
+  function appWith(authenticate: Mock<Authenticate>): Express {
+    const app = express();
+    app.get('/by-hand', async (req, res) => {
+      if (await authenticateRequest({ authenticate }, req, res)) {
+        res.status(200).json({ email: getAuth(res).email });
+      }
+    });
+    app.use(errorHandler);
+    return app;
+  }
+
+  it('returns true and leaves the person in res.locals when the session works', async () => {
+    const { response, text } = await get(
+      appWith(vi.fn<Authenticate>(async () => person)),
+      '/by-hand',
+      { authorization: `Bearer ${TOKEN}` },
+    );
+    expect(response.status).toBe(200);
+    expect(JSON.parse(text)).toEqual({ email: 'ana@example.com' });
+  });
+
+  it('returns false after answering the 401 itself, so the route answers nothing else', async () => {
+    const { response, text } = await get(
+      appWith(vi.fn<Authenticate>(async () => null)),
+      '/by-hand',
+      { authorization: `Bearer ${TOKEN}` },
+    );
+    expect(response.status).toBe(401);
+    expect(response.headers.get('www-authenticate')).toBe('Bearer realm="session"');
+    expect(JSON.parse(text).error.code).toBe('UNAUTHORIZED');
+  });
+
+  it('throws the 503 of the service instead of answering 401', async () => {
+    const authenticate = vi.fn<Authenticate>(async () => {
+      throw new AppError(503, 'DATABASE_UNAVAILABLE', 'The database is not available right now');
+    });
+    const { response } = await get(appWith(authenticate), '/by-hand', {
+      authorization: `Bearer ${TOKEN}`,
+    });
+    expect(response.status).toBe(503);
   });
 });

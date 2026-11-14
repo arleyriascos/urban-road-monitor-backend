@@ -1,4 +1,4 @@
-import type { RequestHandler, Response } from 'express';
+import type { Request, RequestHandler, Response } from 'express';
 import {
   sessionService,
   type AuthContext,
@@ -9,12 +9,42 @@ import { clientAddress } from './rate-limit.js';
 const BEARER = /^Bearer\s+(\S+)$/i;
 
 /** The one answer for every session that does not work, whatever the reason. */
-function reject(res: Response): void {
+export function sendUnauthorized(res: Response): void {
   res
     .status(401)
     .set('WWW-Authenticate', 'Bearer realm="session"')
     .set('Cache-Control', 'no-store')
     .json({ error: { code: 'UNAUTHORIZED', message: 'A valid session is required' } });
+}
+
+/**
+ * Checks the session of a request, the way requireSession does, and tells the caller whether
+ * to go on. On success the person is left in res.locals.auth and it returns true. Otherwise it
+ * has already answered the 401 and it returns false, so the caller must not answer again.
+ * If the database does not answer, it throws the 503 of the service.
+ */
+export async function authenticateRequest(
+  service: Pick<SessionService, 'authenticate'>,
+  req: Request,
+  res: Response,
+): Promise<boolean> {
+  const token = BEARER.exec(req.get('authorization') ?? '')?.[1];
+  if (!token) {
+    sendUnauthorized(res);
+    return false;
+  }
+
+  const auth = await service.authenticate(token, {
+    userAgent: req.get('user-agent'),
+    ip: clientAddress(req),
+  });
+  if (!auth) {
+    sendUnauthorized(res);
+    return false;
+  }
+
+  res.locals.auth = auth;
+  return true;
 }
 
 /**
@@ -34,23 +64,9 @@ export function requireSession(
   service: Pick<SessionService, 'authenticate'> = sessionService,
 ): RequestHandler {
   return async (req, res, next) => {
-    const token = BEARER.exec(req.get('authorization') ?? '')?.[1];
-    if (!token) {
-      reject(res);
-      return;
+    if (await authenticateRequest(service, req, res)) {
+      next();
     }
-
-    const auth = await service.authenticate(token, {
-      userAgent: req.get('user-agent'),
-      ip: clientAddress(req),
-    });
-    if (!auth) {
-      reject(res);
-      return;
-    }
-
-    res.locals.auth = auth;
-    next();
   };
 }
 
