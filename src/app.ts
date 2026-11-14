@@ -6,6 +6,9 @@ import { notFoundHandler } from './middlewares/not-found.js';
 import { apiRouter } from './routes/index.js';
 import { internalRouter } from './routes/internal.routes.js';
 
+/** The biggest JSON body the API reads; it is also express.json()'s own default. */
+export const JSON_BODY_LIMIT = '100kb';
+
 /**
  * Creates and configures the Express application.
  * Keeping the app separate from server.ts makes it easier to test.
@@ -15,7 +18,8 @@ export function createApp() {
 
   app.use(corsMiddleware);
   app.use(compressionMiddleware);
-  app.use(express.json());
+  // Nothing the API receives comes close to 100 KB: a bigger body is refused with a 413.
+  app.use(express.json({ limit: JSON_BODY_LIMIT }));
 
   app.get('/', (_req, res) => {
     res.status(200).json({

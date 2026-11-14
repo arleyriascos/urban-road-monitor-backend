@@ -39,6 +39,47 @@ describe('errorHandler', () => {
     expect(body.error.details).toEqual({ point: 'origin', distanceM: 450 });
   });
 
+  it('answers 413 PAYLOAD_TOO_LARGE to the error of a body over the limit, and logs nothing', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const tooLarge = Object.assign(new Error('request entity too large'), {
+      type: 'entity.too.large',
+      status: 413,
+    });
+    const { status, body } = await answerFor(tooLarge);
+
+    expect(status).toBe(413);
+    expect(body).toEqual({
+      error: { code: 'PAYLOAD_TOO_LARGE', message: 'The request body is too large' },
+    });
+    expect(consoleError).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it('still answers 400 INVALID_JSON to a body that is not JSON', async () => {
+    const app = express();
+    app.use(express.json());
+    app.post('/echo', (_req, res) => {
+      res.status(200).json({});
+    });
+    app.use(errorHandler);
+    const server = app.listen(0);
+    await new Promise((resolve) => server.once('listening', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const response = await fetch(`http://localhost:${port}/echo`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{not json',
+      });
+      expect(response.status).toBe(400);
+      expect(((await response.json()) as { error: { code: string } }).error.code).toBe(
+        'INVALID_JSON',
+      );
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
   it('hides an unexpected error behind a 500', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const { status, body } = await answerFor(new Error('a bug'));

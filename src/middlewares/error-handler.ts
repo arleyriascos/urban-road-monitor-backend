@@ -2,6 +2,16 @@ import type { NextFunction, Request, Response } from 'express';
 import { env } from '../config/env.js';
 import { AppError } from '../errors/app-error.js';
 
+/** The error that express.json() raises when the body goes over its limit. */
+function isPayloadTooLarge(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'type' in error &&
+    error.type === 'entity.too.large'
+  );
+}
+
 /**
  * Last middleware in the chain: turns every error into a JSON response
  * with the correct HTTP status code. Express 5 sends errors from async
@@ -16,6 +26,14 @@ export function errorHandler(error: unknown, _req: Request, res: Response, _next
         message: error.message,
         ...(error.details === undefined ? {} : { details: error.details }),
       },
+    });
+    return;
+  }
+
+  // A body bigger than the limit of the JSON reader (100 KB): the client's mistake, not a bug.
+  if (isPayloadTooLarge(error)) {
+    res.status(413).json({
+      error: { code: 'PAYLOAD_TOO_LARGE', message: 'The request body is too large' },
     });
     return;
   }
