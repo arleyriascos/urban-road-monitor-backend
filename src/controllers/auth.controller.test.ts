@@ -4,8 +4,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../app.js';
 import { AppError } from '../errors/app-error.js';
 import { errorHandler } from '../middlewares/error-handler.js';
+import { requireSession } from '../middlewares/require-session.js';
+import type { AccountProfile } from '../repositories/account.repository.js';
 import { createAuthRouter } from '../routes/auth.routes.js';
+import type { AccountService } from '../services/account.service.js';
 import type { GoogleLoginResult } from '../services/google-login.service.js';
+import type { AuthContext, SessionService } from '../services/session.service.js';
 import { AuthController } from './auth.controller.js';
 
 const EXPIRES = new Date('2026-11-17T12:00:00.000Z');
@@ -198,5 +202,143 @@ describe('POST /api/auth/google in the whole application', () => {
     const other = await post(app, { credential: 'a.b.c' }, { 'true-client-ip': '198.51.100.31' });
 
     expect(other.response.status).toBe(503);
+  });
+});
+
+describe('GET /api/auth/me', () => {
+  type Profile = AccountService['profile'];
+  type Authenticate = SessionService['authenticate'];
+
+  const TOKEN = 'T'.repeat(43);
+  const session: AuthContext = {
+    sessionId: 'session-1',
+    userId: '5f0b3c2e-0000-4000-8000-000000000001',
+    email: 'ana@example.com',
+    fullName: 'Ana Pérez',
+  };
+  const profile: AccountProfile = {
+    id: session.userId,
+    email: 'ana@example.com',
+    fullName: 'Ana Pérez',
+    avatarUrl: 'https://lh3.example.com/a/photo=s96-c',
+    roles: ['colaborador', 'usuario'],
+    permissions: ['detections.create', 'trips.view_own'],
+  };
+
+  /** The real session check with a service that answers `authenticated`, and a fake profile. */
+  function appWithMe(profileOf: Profile, authenticated: AuthContext | null = session): Express {
+    const authenticate = vi.fn<Authenticate>(async () => authenticated);
+    const app = express();
+    app.use(express.json());
+    app.use(
+      '/api',
+      createAuthRouter(
+        new AuthController({ login: vi.fn<Login>() }, { profile: profileOf }),
+        (_req, _res, next) => next(),
+        requireSession({ authenticate }),
+      ),
+    );
+    app.use(errorHandler);
+    return app;
+  }
+
+  async function getMe(app: Express, headers: Record<string, string> = {}) {
+    const server = app.listen(0);
+    await new Promise((resolve) => server.once('listening', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const response = await fetch(`http://localhost:${port}/api/auth/me`, { headers });
+      return { response, json: (await response.json()) as Record<string, unknown> };
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  }
+
+  const bearer = { authorization: `Bearer ${TOKEN}` };
+
+  it('answers the person of the session with their roles and permissions, and no cache', async () => {
+    const { response, json } = await getMe(appWithMe(vi.fn<Profile>(async () => profile)), bearer);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(json).toEqual({ user: profile });
+  });
+
+  it('answers the same fields as the sign-in plus permissions, and nothing about the session', async () => {
+    const { json } = await getMe(appWithMe(vi.fn<Profile>(async () => profile)), bearer);
+
+    expect(Object.keys(json)).toEqual(['user']);
+    expect(Object.keys(json.user as object).sort()).toEqual(
+      [...Object.keys(result.user), 'permissions'].sort(),
+    );
+  });
+
+  it('asks for the person of the session, found by the session and not by the request', async () => {
+    const profileOf = vi.fn<Profile>(async () => profile);
+    await getMe(appWithMe(profileOf), bearer);
+
+    expect(profileOf).toHaveBeenCalledTimes(1);
+    expect(profileOf).toHaveBeenCalledWith(session.userId);
+  });
+
+  it('answers the usual 401 without a session and never asks for the profile', async () => {
+    const profileOf = vi.fn<Profile>(async () => profile);
+    const { response, json } = await getMe(appWithMe(profileOf, null), bearer);
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get('www-authenticate')).toBe('Bearer realm="session"');
+    expect(json).toEqual({
+      error: { code: 'UNAUTHORIZED', message: 'A valid session is required' },
+    });
+    expect(profileOf).not.toHaveBeenCalled();
+  });
+
+  it('answers the usual 401 when the account is gone after the session was checked', async () => {
+    const { response, json } = await getMe(appWithMe(vi.fn<Profile>(async () => null)), bearer);
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get('www-authenticate')).toBe('Bearer realm="session"');
+    expect(json.error).toMatchObject({ code: 'UNAUTHORIZED' });
+  });
+
+  it('answers 503, not 401, when the database does not answer, so the frontend keeps the session', async () => {
+    const profileOf = vi.fn<Profile>(async () => {
+      throw new AppError(503, 'DATABASE_UNAVAILABLE', 'The database is not available right now');
+    });
+    const { response, json } = await getMe(appWithMe(profileOf), bearer);
+
+    expect(response.status).toBe(503);
+    expect(json.error).toMatchObject({ code: 'DATABASE_UNAVAILABLE' });
+  });
+});
+
+describe('GET /api/auth/me in the whole application', () => {
+  it('is mounted and answers 401 without a session', async () => {
+    const server = createApp().listen(0);
+    await new Promise((resolve) => server.once('listening', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const response = await fetch(`http://localhost:${port}/api/auth/me`);
+      expect(response.status).toBe(401);
+      expect(((await response.json()) as { error: { code: string } }).error.code).toBe(
+        'UNAUTHORIZED',
+      );
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
+  it('is listed in the root of the API', async () => {
+    const server = createApp().listen(0);
+    await new Promise((resolve) => server.once('listening', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const body = (await (await fetch(`http://localhost:${port}/`)).json()) as {
+        endpoints: string[];
+      };
+      expect(body.endpoints).toContain('GET /api/auth/me');
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 });

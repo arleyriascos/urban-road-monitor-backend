@@ -35,6 +35,7 @@ export function createApp() {
         '/api/road-network/stats',
         'POST /api/routes',
         'POST /api/auth/google',
+        'GET /api/auth/me',
       ],
     });
   });
