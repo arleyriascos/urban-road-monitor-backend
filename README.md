@@ -71,6 +71,7 @@ El mismo valor va en el backend y en el servicio de IA. Nunca se escribe en `.en
 | `npm run db:pull`       | Lee las tablas de la base de datos y actualiza `prisma/schema.prisma`              |
 | `npm run import:roads`  | Importa la red vial de Pasto desde OpenStreetMap (ver `docs/IMPORTACION-OSM.md`)   |
 | `npm run seed:potholes` | Crea baches de prueba solo en la rama development (ver `docs/BACHES-DE-PRUEBA.md`) |
+| `npm run user:role`     | Da o quita un rol a una cuenta, con confirmación (ver `docs/AUTENTICACION.md`)     |
 
 ## Endpoints
 
@@ -86,6 +87,8 @@ El mismo valor va en el backend y en el servicio de IA. Nunca se escribe en `.en
 | GET    | `/api/road-network/stats` | Totales y leyenda del mapa                                                               |
 | POST   | `/api/routes`             | Ruta entre dos puntos del mapa, lista para dibujar (ver "Rutas" más abajo)               |
 | POST   | `/api/auth/google`        | Ingreso con Google: recibe el token de Google y entrega una sesión (ver "Ingreso")       |
+| GET    | `/api/auth/me`            | Quién es la persona de la sesión, con sus roles y permisos (necesita sesión)             |
+| POST   | `/api/auth/logout`        | Cierra la sesión que hace la petición, y solo esa (necesita sesión; responde 204)        |
 
 Los errores siempre responden en JSON con la forma `{ "error": { "code", "message" } }`, y algunos agregan `details` con datos para el frontend.
 
@@ -157,6 +160,15 @@ Las rutas no se guardan en la base de datos (`route_requests` y `route_steps` qu
 
 El `token` se manda después en cada petición protegida como `Authorization: Bearer <token>`. Errores: 400 `INVALID_REQUEST`, 401 `INVALID_GOOGLE_TOKEN` (siempre el mismo mensaje, sea cual sea el motivo), 403 `ACCOUNT_DISABLED`, 429 (más de 10 intentos por minuto y dirección IP, con `Retry-After`) y 503 (`AUTH_PROVIDER_UNAVAILABLE`, `AUTH_NOT_CONFIGURED` o `DATABASE_UNAVAILABLE`). Los 503 no cierran nada: el frontend reintenta.
 
+### Sesión, quién soy y salir (para el frontend)
+
+Con el `token` en `Authorization: Bearer <token>`:
+
+- `GET /api/auth/me` responde `{ "user": { …como el ingreso…, "permissions": ["…"] } }`. El frontend lo llama al abrir la página si guardó un identificador: un **401** significa que la sesión ya no sirve (se borra el identificador y se vuelve a la entrada); un **503** o un tiempo agotado **no** significan eso: se conserva el identificador y se reintenta. Los permisos se leen en cada petición, así que un rol recién dado se ve de inmediato.
+- `POST /api/auth/logout` (sin cuerpo) cierra solo esa sesión y responde **204**. Si la sesión ya estaba cerrada, responde el 401 de siempre.
+- Una ruta que exige un permiso usa `requirePermission('codigo')`: **401** sin sesión y **403** `FORBIDDEN` con sesión pero sin el permiso.
+- Un cuerpo de más de 100 KB responde **413** `PAYLOAD_TOO_LARGE`.
+
 ### Endpoint interno
 
 Solo lo usa el servicio de IA para calcular rutas. No está en la lista de `GET /` y necesita el encabezado `Authorization: Bearer <INTERNAL_TOKEN>`.
@@ -199,7 +211,7 @@ database/              Scripts SQL, diagrama entidad-relación y su README
 docs/                  Guías de uso, como la importación de la red vial
 prisma/                Esquema de Prisma (generado con npm run db:pull)
 src/
-├── auth/              Sesiones (duración, identificador, datos que se guardan) e ingreso con Google (verificador del token, identidad, nombre y foto)
+├── auth/              Sesiones (duración, identificador, datos que se guardan), ingreso con Google (verificador del token, identidad, nombre y foto) y el comando de roles
 ├── config/            Variables de entorno y conexión única a la base (Singleton)
 ├── controllers/       Reciben la petición y responden con el código HTTP correcto
 ├── docs/              Documento OpenAPI que muestra Swagger
@@ -210,7 +222,7 @@ src/
 ├── osm/               Importación de la red vial: consulta, lectura, tramos e informe
 ├── routes/            Rutas de la API REST
 ├── routing/           Petición de ruta: criterios, redondeo de los clics y clave de la caché
-├── scripts/           Comandos que se ejecutan a mano, como import-roads
+├── scripts/           Comandos que se ejecutan a mano, como import-roads y user-role
 ├── seed/              Baches de prueba: generador, corredores, plan y protecciones
 ├── services/          Lógica de negocio
 ├── structures/        Estructuras escritas a mano: tabla hash, lista doble y caché LRU
