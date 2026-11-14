@@ -73,3 +73,12 @@ export async function createTestUser(
   });
   return user.id;
 }
+
+/** Gives a person one of the roles that migration 08 and the seed data create (by its name). */
+export async function giveRole(db: PrismaClient, userId: string, roleName: string): Promise<void> {
+  const role = await db.roles.findUniqueOrThrow({
+    where: { name: roleName },
+    select: { id: true },
+  });
+  await db.user_roles.create({ data: { user_id: userId, role_id: role.id } });
+}
