@@ -137,6 +137,91 @@ describe.skipIf(!url)('TripRepository (real database)', () => {
     });
   });
 
+  describe('listByUser', () => {
+    async function tripAt(userId: string, deviceId: string, minute: number) {
+      return repository.create({
+        userId,
+        deviceId,
+        aiModelId: modelId,
+        startedAt: new Date(T0.getTime() + minute * 60_000),
+      });
+    }
+
+    it('lists the trips of the person, newest first, with their device and model', async () => {
+      const userId = await createTestUser(db);
+      const deviceId = (
+        await db.devices.create({ data: { user_id: userId, platform: 'ios', label: 'Mi iPhone' } })
+      ).id;
+      const first = await tripAt(userId, deviceId, 0);
+      const second = await tripAt(userId, deviceId, 60);
+
+      const list = await repository.listByUser(userId, 10, null);
+
+      expect(list.map((trip) => trip.id)).toEqual([second.id, first.id]);
+      expect(list[0]).toMatchObject({
+        platform: 'ios',
+        deviceLabel: 'Mi iPhone',
+        modelVersion: '1.0.0',
+        endedAt: null,
+        detectionCount: 0,
+      });
+    });
+
+    it('counts the detections of each trip', async () => {
+      const userId = await createTestUser(db);
+      const deviceId = await newDevice(userId);
+      const trip = await tripAt(userId, deviceId, 0);
+      const level = await db.severity_levels.findFirstOrThrow();
+      await db.detections.createMany({
+        data: [1, 2, 3].map((n) => ({
+          trip_id: trip.id,
+          severity_level_id: level.id,
+          latitude: 1.2 + n / 1000,
+          longitude: -77.3,
+          model_confidence: 0.7,
+          bbox_area_ratio: 0.02,
+          detected_at: T0,
+        })),
+      });
+
+      expect((await repository.listByUser(userId, 10, null))[0]?.detectionCount).toBe(3);
+    });
+
+    it('does not list the trips of other people', async () => {
+      const one = await createTestUser(db);
+      const two = await createTestUser(db);
+      await tripAt(one, await newDevice(one), 0);
+
+      expect(await repository.listByUser(two, 10, null)).toEqual([]);
+    });
+
+    it('pages with the cursor without skipping or repeating a trip, even with equal start times', async () => {
+      const userId = await createTestUser(db);
+      const deviceId = await newDevice(userId);
+      const created = [];
+      for (const minute of [0, 10, 10, 10, 20, 30, 30]) {
+        created.push(await tripAt(userId, deviceId, minute));
+      }
+
+      const seen: string[] = [];
+      let cursor = null;
+      for (let page = 0; page < 10; page += 1) {
+        const rows = await repository.listByUser(userId, 3, cursor);
+        if (rows.length === 0) {
+          break;
+        }
+        seen.push(...rows.map((row) => row.id));
+        const last = rows[rows.length - 1]!;
+        cursor = { startedAt: last.startedAt, id: last.id };
+      }
+
+      expect(seen).toHaveLength(created.length);
+      expect(new Set(seen).size).toBe(created.length);
+      const all = await repository.listByUser(userId, 100, null);
+      expect(seen).toEqual(all.map((row) => row.id));
+    });
+  });
+
   describe('findOwned', () => {
     it('finds a trip of the person', async () => {
       const userId = await createTestUser(db);

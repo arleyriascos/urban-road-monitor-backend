@@ -1,5 +1,6 @@
 import { prisma } from '../config/database.js';
 import type { PrismaClient } from '../generated/prisma/client.js';
+import type { TripCursor } from '../trips/cursor.js';
 import { isUuid } from '../trips/uuid.js';
 
 /** A trip: from the moment the camera starts until it stops. */
@@ -30,6 +31,31 @@ interface TripRow {
   ended_at: Date | null;
   frames_analyzed: number;
   distance_m: { toString(): string } | number;
+}
+
+/** A trip of the list of a person: the trip, its device, its model and how many detections it has. */
+export interface TripSummary {
+  id: string;
+  startedAt: Date;
+  endedAt: Date | null;
+  framesAnalyzed: number;
+  distanceM: number;
+  detectionCount: number;
+  platform: string;
+  deviceLabel: string | null;
+  modelVersion: string;
+}
+
+interface RawSummaryRow {
+  id: string;
+  started_at: Date;
+  ended_at: Date | null;
+  frames_analyzed: number;
+  distance_m: number;
+  detection_count: number;
+  platform: string;
+  label: string | null;
+  model_version: string;
 }
 
 export interface TripEnd {
@@ -77,6 +103,48 @@ export class TripRepository {
     }
     const row = await this.db.trips.findFirst({ where: { id: tripId, user_id: userId } });
     return row ? toTripRecord(row) : null;
+  }
+
+  /**
+   * The trips of a person, newest first, at most `limit` of them. With a cursor, only the trips
+   * that come after it. The order is the one of the index (user, start, id), and the id breaks
+   * the ties, so no trip is skipped or repeated between pages.
+   */
+  async listByUser(
+    userId: string,
+    limit: number,
+    after: TripCursor | null,
+  ): Promise<TripSummary[]> {
+    const rows = await this.db.$queryRaw<RawSummaryRow[]>`
+      SELECT t.id::text AS id,
+             t.started_at,
+             t.ended_at,
+             t.frames_analyzed::int AS frames_analyzed,
+             t.distance_m::float8 AS distance_m,
+             (SELECT COUNT(*)::int FROM detections x WHERE x.trip_id = t.id) AS detection_count,
+             d.platform,
+             d.label,
+             m.version AS model_version
+      FROM trips t
+      JOIN devices d ON d.id = t.device_id
+      JOIN ai_models m ON m.id = t.ai_model_id
+      WHERE t.user_id = ${userId}::uuid
+        AND (${after === null}::boolean
+             OR (t.started_at, t.id) < (${after?.startedAt ?? new Date(0)}::timestamptz,
+                                        ${after?.id ?? '00000000-0000-0000-0000-000000000000'}::uuid))
+      ORDER BY t.started_at DESC, t.id DESC
+      LIMIT ${limit}`;
+    return rows.map((row) => ({
+      id: row.id,
+      startedAt: row.started_at,
+      endedAt: row.ended_at,
+      framesAnalyzed: row.frames_analyzed,
+      distanceM: row.distance_m,
+      detectionCount: row.detection_count,
+      platform: row.platform,
+      deviceLabel: row.label,
+      modelVersion: row.model_version,
+    }));
   }
 
   /**
