@@ -40,6 +40,9 @@ describe.skipIf(!url)('requirePermission with a real database', () => {
     app.get('/detect', requirePermission('detections.create', dependencies), (_req, res) => {
       res.status(200).json({ route: 'detect', email: getAuth(res).email });
     });
+    app.get('/repair', requirePermission('potholes.report_repair', dependencies), (_req, res) => {
+      res.status(200).json({ route: 'repair' });
+    });
     app.get('/manage', requirePermission('users.manage', dependencies), (_req, res) => {
       res.status(200).json({ route: 'manage' });
     });
@@ -87,10 +90,11 @@ describe.skipIf(!url)('requirePermission with a real database', () => {
 
   const logs = () => db.auth_logs.findMany({ orderBy: { id: 'asc' } });
 
-  it('refuses the base role everything: it has no permission of its own', async () => {
+  it('lets the base role record detections (migration 11) and refuses it the rest', async () => {
     const { token } = await personWith(['usuario']);
 
-    expect((await get('/detect', token)).status).toBe(403);
+    expect((await get('/detect', token)).status).toBe(200);
+    expect((await get('/repair', token)).status).toBe(403);
     expect((await get('/manage', token)).status).toBe(403);
   });
 
@@ -101,6 +105,7 @@ describe.skipIf(!url)('requirePermission with a real database', () => {
       status: 200,
       body: { route: 'detect', email: 'ana@example.com' },
     });
+    expect((await get('/repair', token)).status).toBe(200);
     expect((await get('/manage', token)).status).toBe(403);
   });
 
@@ -118,7 +123,7 @@ describe.skipIf(!url)('requirePermission with a real database', () => {
 
   it('answers 403 with the same body whatever the missing permission', async () => {
     const { token } = await personWith(['usuario']);
-    const first = await get('/detect', token);
+    const first = await get('/repair', token);
     const second = await get('/manage', token);
 
     expect(first.body).toEqual({
@@ -137,32 +142,32 @@ describe.skipIf(!url)('requirePermission with a real database', () => {
   it('writes nothing to auth_logs when it refuses: a refusal is not an attack', async () => {
     const { token } = await personWith(['usuario']);
 
-    await get('/detect', token);
+    await get('/repair', token);
     await get('/manage', token);
-    await get('/detect', token);
+    await get('/repair', token);
 
     expect(await logs()).toHaveLength(0);
   });
 
   it('applies a promotion on the very next request, with the same session', async () => {
     const { userId, token } = await personWith(['usuario']);
-    expect((await get('/detect', token)).status).toBe(403);
+    expect((await get('/repair', token)).status).toBe(403);
 
     await giveRole(db, userId, 'colaborador');
 
-    expect((await get('/detect', token)).status).toBe(200);
+    expect((await get('/repair', token)).status).toBe(200);
   });
 
   it('applies a demotion on the very next request, with the same session', async () => {
     const { userId, token } = await personWith(['usuario', 'colaborador']);
-    expect((await get('/detect', token)).status).toBe(200);
+    expect((await get('/repair', token)).status).toBe(200);
 
     const role = await db.roles.findUniqueOrThrow({ where: { name: 'colaborador' } });
     await db.user_roles.delete({
       where: { user_id_role_id: { user_id: userId, role_id: role.id } },
     });
 
-    expect((await get('/detect', token)).status).toBe(403);
+    expect((await get('/repair', token)).status).toBe(403);
   });
 
   it('answers 401 once the person is deactivated, even if they are an administrator', async () => {

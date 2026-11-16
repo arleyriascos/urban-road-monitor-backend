@@ -119,16 +119,16 @@ describe.skipIf(!url)('sign in, /me, roles and sign out, end to end (real databa
   it('follows a person from the first sign-in to the sign-out', async () => {
     const { token, user } = await signIn();
 
-    // A new person is only "usuario": they see who they are and may do nothing special.
+    // A new person is "usuario": they see who they are and may record detections (migration 11).
     const first = await me(token);
     expect(first.status).toBe(200);
     expect(first.cache).toBe('no-store');
     expect(first.body?.user).toMatchObject({
       email: 'ana@example.com',
       roles: ['usuario'],
-      permissions: [],
+      permissions: ['detections.create', 'trips.view_own'],
     });
-    expect((await detect(token)).status).toBe(403);
+    expect((await detect(token)).status).toBe(200);
 
     // The administrator gives them a role (what npm run user:role does): it counts at once.
     const change = await new RoleAdminRepository(db).change(

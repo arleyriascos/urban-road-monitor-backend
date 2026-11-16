@@ -115,6 +115,8 @@ describe.skipIf(!url)('UserRepository (real database)', () => {
 
     it('leaves nothing behind when the base role is missing', async () => {
       const role = await db.roles.findUniqueOrThrow({ where: { name: BASE_ROLE } });
+      // Deleting a role deletes its permissions too, so they are kept to put them back.
+      const granted = await db.role_permissions.findMany({ where: { role_id: role.id } });
       await db.roles.delete({ where: { id: role.id } });
       try {
         await expect(repository.signInWithGoogle(signIn())).rejects.toBeInstanceOf(
@@ -122,7 +124,12 @@ describe.skipIf(!url)('UserRepository (real database)', () => {
         );
         expect(await counts()).toEqual({ users: 0, links: 0, roles: 0 });
       } finally {
-        await db.roles.create({ data: { name: role.name, description: role.description } });
+        const restored = await db.roles.create({
+          data: { name: role.name, description: role.description },
+        });
+        await db.role_permissions.createMany({
+          data: granted.map((row) => ({ role_id: restored.id, permission_id: row.permission_id })),
+        });
       }
     });
   });

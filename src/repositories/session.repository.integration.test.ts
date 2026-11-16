@@ -266,13 +266,13 @@ describe.skipIf(!url)('migration 08 (real database)', () => {
     await resetDatabase(db);
   });
 
-  it('adds the usuario role without any permission', async () => {
+  it('adds the usuario role with the two permissions of recording', async () => {
     const role = await db.roles.findUnique({
       where: { name: 'usuario' },
       include: { role_permissions: true },
     });
     expect(role).not.toBeNull();
-    expect(role?.role_permissions).toHaveLength(0);
+    expect(role?.role_permissions).toHaveLength(2);
   });
 
   it('keeps the colaborador and administrador roles', async () => {

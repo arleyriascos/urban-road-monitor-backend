@@ -16,6 +16,7 @@ import { AccountRepository } from './account.repository.js';
  */
 const url = testDatabaseUrl();
 
+const BASE_PERMISSIONS = ['detections.create', 'trips.view_own'];
 const COLLABORATOR_PERMISSIONS = [
   'detections.create',
   'potholes.report_repair',
@@ -41,7 +42,7 @@ describe.skipIf(!url)('AccountRepository (real database)', () => {
   });
 
   describe('findProfile', () => {
-    it('gives a person with only the base role no permission at all', async () => {
+    it('gives a person with only the base role the two permissions of recording', async () => {
       const userId = await createTestUser(db, { email: 'ana@example.com' });
       await giveRole(db, userId, 'usuario');
 
@@ -51,7 +52,7 @@ describe.skipIf(!url)('AccountRepository (real database)', () => {
         fullName: expect.any(String),
         avatarUrl: null,
         roles: ['usuario'],
-        permissions: [],
+        permissions: BASE_PERMISSIONS,
       });
     });
 
@@ -96,14 +97,15 @@ describe.skipIf(!url)('AccountRepository (real database)', () => {
       await giveRole(db, ana, 'administrador');
       await giveRole(db, luis, 'usuario');
 
-      expect((await repository.findProfile(luis))?.permissions).toEqual([]);
+      expect((await repository.findProfile(luis))?.permissions).toEqual(BASE_PERMISSIONS);
+      expect((await repository.findProfile(luis))?.permissions).not.toContain('users.manage');
       expect((await repository.findProfile(ana))?.roles).toEqual(['administrador']);
     });
 
     it('reads the roles at every call: a role given later shows up at once', async () => {
       const userId = await createTestUser(db);
       await giveRole(db, userId, 'usuario');
-      expect((await repository.findProfile(userId))?.permissions).toEqual([]);
+      expect((await repository.findProfile(userId))?.permissions).toEqual(BASE_PERMISSIONS);
 
       await giveRole(db, userId, 'colaborador');
 
@@ -127,11 +129,12 @@ describe.skipIf(!url)('AccountRepository (real database)', () => {
   });
 
   describe('hasPermission', () => {
-    it('is false for a person with only the base role', async () => {
+    it('is true for the base role on what it records and false on the rest', async () => {
       const userId = await createTestUser(db);
       await giveRole(db, userId, 'usuario');
 
-      expect(await repository.hasPermission(userId, 'detections.create')).toBe(false);
+      expect(await repository.hasPermission(userId, 'detections.create')).toBe(true);
+      expect(await repository.hasPermission(userId, 'potholes.report_repair')).toBe(false);
     });
 
     it('is false for a person with no role at all', async () => {

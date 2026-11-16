@@ -18,6 +18,7 @@ Base de datos del proyecto **Detección de Baches y Rutas en Vías Urbanas** (Po
 | `08_auth_base.sql` | Migración: base de las sesiones y los roles de la Etapa 3 (ver más abajo) |
 | `09_detections_base.sql` | Migración: base de los viajes y las detecciones de la Etapa 4 (ver más abajo) |
 | `10_consolidation_base.sql` | Migración: base de la consolidación de baches de la Etapa 4 (ver más abajo) |
+| `11_usuario_can_record.sql` | Migración: el rol `usuario` (toda cuenta) puede guardar detecciones y ver sus viajes; llega a las cuentas que ya existen. Idempotente |
 
 ## Cómo ejecutarlo
 

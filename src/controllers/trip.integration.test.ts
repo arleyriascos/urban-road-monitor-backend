@@ -266,13 +266,13 @@ describe.skipIf(!url)('trips and detections, end to end (real database)', () => 
     expect(await db.detections.count()).toBe(0);
   });
 
-  it('asks for a session and for the role', async () => {
+  it('asks for a session, but not for the collaborator role', async () => {
     const plain = await person('visita@example.com', false);
 
     expect((await start('')).status).toBe(401);
     expect((await call('GET', '/api/trips')).status).toBe(401);
-    expect((await start(plain)).status).toBe(403);
-    expect((await call('GET', '/api/trips', plain)).status).toBe(403);
+    expect((await start(plain)).status).toBe(201);
+    expect((await call('GET', '/api/trips', plain)).status).toBe(200);
   });
 
   it('refuses a model that is not the active one', async () => {
