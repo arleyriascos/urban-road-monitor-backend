@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { computeSegmentDamage, routeCost, type PotholeDamageInput } from './segment-damage.js';
+import {
+  computeSegmentDamage,
+  routeCost,
+  statusAffectsRoutes,
+  type PotholeDamageInput,
+} from './segment-damage.js';
 
 const LEVE = 1;
 const MODERADO = 2;
@@ -9,8 +14,8 @@ const pothole = (
   severityId: number,
   severityWeight: number,
   confidence: number,
-  isRepaired = false,
-): PotholeDamageInput => ({ severityId, severityWeight, confidence, isRepaired });
+  affectsRoutes = true,
+): PotholeDamageInput => ({ severityId, severityWeight, confidence, affectsRoutes });
 
 describe('computeSegmentDamage', () => {
   it('has no damage and no severity without potholes', () => {
@@ -35,13 +40,13 @@ describe('computeSegmentDamage', () => {
     expect(damage.damageScore).toBeCloseTo(0.5 + 0.6, 10);
   });
 
-  it('ignores repaired potholes', () => {
-    const damage = computeSegmentDamage([pothole(GRAVE, 6, 1, true), pothole(LEVE, 0.5, 1)]);
+  it('ignores potholes that do not count (repaired or not yet confirmed)', () => {
+    const damage = computeSegmentDamage([pothole(GRAVE, 6, 1, false), pothole(LEVE, 0.5, 1)]);
     expect(damage).toEqual({ damageScore: 0.5, maxSeverityLevelId: LEVE });
   });
 
-  it('has no damage when every pothole is repaired', () => {
-    expect(computeSegmentDamage([pothole(GRAVE, 6, 1, true)])).toEqual({
+  it('has no damage when no pothole counts', () => {
+    expect(computeSegmentDamage([pothole(GRAVE, 6, 1, false)])).toEqual({
       damageScore: 0,
       maxSeverityLevelId: null,
     });
@@ -66,5 +71,14 @@ describe('routeCost', () => {
     for (const damage of [0, 0.01, 1, 12.5]) {
       expect(routeCost(80, damage)).toBeGreaterThanOrEqual(80);
     }
+  });
+});
+
+describe('statusAffectsRoutes', () => {
+  it('counts only the confirmed status', () => {
+    expect(statusAffectsRoutes('confirmado')).toBe(true);
+    expect(statusAffectsRoutes('sin confirmar')).toBe(false);
+    expect(statusAffectsRoutes('reparado')).toBe(false);
+    expect(statusAffectsRoutes('')).toBe(false);
   });
 });

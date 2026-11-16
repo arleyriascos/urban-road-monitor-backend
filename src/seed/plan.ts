@@ -1,5 +1,9 @@
 import { roundTo } from '../osm/geo.js';
-import { computeSegmentDamage, type SegmentDamage } from '../services/segment-damage.js';
+import {
+  computeSegmentDamage,
+  statusAffectsRoutes,
+  type SegmentDamage,
+} from '../services/segment-damage.js';
 import { selectCorridors } from './corridors.js';
 import { pointAlong } from './polyline.js';
 import { createRandom, randomInt, shuffle, weightedPick, type Random } from './prng.js';
@@ -184,7 +188,7 @@ export function planSeed(
           severityId: pothole.severityId,
           severityWeight: weights.get(pothole.severityId) ?? 0,
           confidence: pothole.confidence,
-          isRepaired: pothole.statusName === 'reparado',
+          affectsRoutes: statusAffectsRoutes(pothole.statusName),
         })),
       ),
     );

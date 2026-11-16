@@ -115,13 +115,13 @@ describe('planSeed pothole details', () => {
 });
 
 describe('planSeed damage', () => {
-  it('computes the damage of every affected segment from its active potholes', () => {
+  it('computes the damage of every affected segment from its confirmed potholes', () => {
     const weights = new Map(
       testCatalogs.severities.map((severity) => [severity.id, severity.costWeight]),
     );
     const expected = new Map<number, number>();
     for (const pothole of plan.potholes) {
-      if (pothole.statusName === 'reparado') continue;
+      if (pothole.statusName !== 'confirmado') continue;
       const weight = weights.get(pothole.severityId) ?? 0;
       expected.set(
         pothole.segmentId,
@@ -134,7 +134,7 @@ describe('planSeed damage', () => {
     }
   });
 
-  it('has an entry for every segment that has a pothole, even if all are repaired', () => {
+  it('has an entry for every segment that has a pothole, even if none is confirmed', () => {
     const withPotholes = new Set(plan.potholes.map((pothole) => pothole.segmentId));
     expect(new Set(plan.segmentDamage.keys())).toEqual(withPotholes);
   });
