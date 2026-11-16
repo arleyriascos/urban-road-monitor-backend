@@ -19,6 +19,10 @@ import {
 } from '../repositories/severity.repository.js';
 import { tripRepository, type TripRepository } from '../repositories/trip.repository.js';
 import { CLOCK_SKEW_MS, acceptsDetections } from '../trips/trip-rules.js';
+import {
+  consolidationCoordinator,
+  type ConsolidationCoordinator,
+} from './consolidation-coordinator.js';
 import { orUnavailable } from './database-errors.js';
 import { DEFAULT_MAX_GPS_ACCURACY_M } from './trip.service.js';
 
@@ -41,6 +45,8 @@ export interface DetectionIngestDependencies {
   severities: Pick<SeverityRepository, 'findAll'>;
   detections: Pick<DetectionRepository, 'insertMany'>;
   parameters: Pick<ParameterRepository, 'getNumber'>;
+  /** Told when detections were stored, so the consolidation can plan a run. */
+  consolidation: Pick<ConsolidationCoordinator, 'notify'>;
   clock: () => Date;
 }
 
@@ -55,6 +61,7 @@ export class DetectionIngestService {
       severities: severityRepository,
       detections: detectionRepository,
       parameters: parameterRepository,
+      consolidation: consolidationCoordinator,
       clock: () => new Date(),
       ...deps,
     };
@@ -102,6 +109,9 @@ export class DetectionIngestService {
       const levels = await this.deps.severities.findAll();
       const rows = accepted.map((detection) => this.toRow(detection, levels));
       const stored = await this.deps.detections.insertMany(tripId, rows, now);
+      if (stored > 0) {
+        this.tellConsolidation();
+      }
 
       return {
         received: batch.detections.length,
@@ -110,6 +120,15 @@ export class DetectionIngestService {
         rejected,
       };
     });
+  }
+
+  /** The detections are already safe in the table: a problem here must not fail the request. */
+  private tellConsolidation(): void {
+    try {
+      this.deps.consolidation.notify();
+    } catch (error) {
+      console.error('Could not tell the consolidation about new detections:', error);
+    }
   }
 
   private toRow(

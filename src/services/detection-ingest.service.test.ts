@@ -55,6 +55,7 @@ function setup(options: { trip?: TripRecord | null; existing?: number } = {}) {
       }),
     },
     parameters: { getNumber: vi.fn(async (_key: string, fallback: number) => fallback) },
+    consolidation: { notify: vi.fn() },
     clock: () => NOW,
   };
   return { service: new DetectionIngestService(deps), deps, inserted };
@@ -167,5 +168,36 @@ describe('DetectionIngestService', () => {
 
     expect(result).toMatchObject({ stored: 0, duplicates: 0 });
     expect(deps.detections.insertMany).toHaveBeenCalledWith(TRIP_ID, [], NOW);
+  });
+
+  describe('the consolidation', () => {
+    it('is told when new detections were stored', async () => {
+      const { service, deps } = setup();
+      await service.ingest('user-1', TRIP_ID, { detections: [seen(1)] });
+      expect(deps.consolidation.notify).toHaveBeenCalledTimes(1);
+    });
+
+    it('is not told when nothing new was stored (all duplicates, or all refused)', async () => {
+      const duplicates = setup({ existing: 1 });
+      await duplicates.service.ingest('user-1', TRIP_ID, { detections: [seen(1)] });
+      expect(duplicates.deps.consolidation.notify).not.toHaveBeenCalled();
+
+      const refused = setup();
+      await refused.service.ingest('user-1', TRIP_ID, {
+        detections: [seen(1, { confidence: 0.1 })],
+      });
+      expect(refused.deps.consolidation.notify).not.toHaveBeenCalled();
+    });
+
+    it('never fails the request when telling it fails', async () => {
+      const { service, deps } = setup();
+      deps.consolidation.notify.mockImplementation(() => {
+        throw new Error('boom');
+      });
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      await expect(
+        service.ingest('user-1', TRIP_ID, { detections: [seen(1)] }),
+      ).resolves.toMatchObject({ stored: 1 });
+    });
   });
 });
