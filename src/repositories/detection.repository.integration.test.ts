@@ -122,4 +122,38 @@ describe.skipIf(!url)('DetectionRepository (real database)', () => {
 
     expect(await repository.insertMany(tripId, batch, T0)).toBe(100);
   });
+
+  describe('countByTrip', () => {
+    it('counts the detections of a trip by severity, with every severity present', async () => {
+      const levels = await db.severity_levels.findMany();
+      const grave = levels.find((level) => level.name === 'grave')!;
+      await repository.insertMany(
+        tripId,
+        [detection(1), detection(2), detection(3, { severityLevelId: grave.id })],
+        T0,
+      );
+
+      expect(await repository.countByTrip(tripId)).toEqual({
+        total: 3,
+        bySeverity: [
+          { severity: 'leve', count: 0 },
+          { severity: 'moderado', count: 2 },
+          { severity: 'grave', count: 1 },
+        ],
+      });
+    });
+
+    it('counts zero for a trip without detections', async () => {
+      const count = await repository.countByTrip(tripId);
+
+      expect(count.total).toBe(0);
+      expect(count.bySeverity).toHaveLength(3);
+    });
+
+    it('does not count the detections of another trip', async () => {
+      await repository.insertMany(tripId, [detection(1)], T0);
+
+      expect((await repository.countByTrip('00000000-0000-4000-8000-0000000000ff')).total).toBe(0);
+    });
+  });
 });

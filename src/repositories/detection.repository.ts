@@ -13,6 +13,12 @@ export interface NewDetection {
   detectedAt: Date;
 }
 
+/** How many detections a trip has, in all and by severity (every severity appears, even with 0). */
+export interface TripDetectionCount {
+  total: number;
+  bySeverity: { severity: string; count: number }[];
+}
+
 /** Reads and writes the detections table. Every time comes from the caller, never from NOW(). */
 export class DetectionRepository {
   constructor(private readonly db: PrismaClient = prisma) {}
@@ -49,6 +55,20 @@ export class DetectionRepository {
       skipDuplicates: true,
     });
     return result.count;
+  }
+
+  /** The detections of a trip, counted in all and by severity, from the least to the most severe. */
+  async countByTrip(tripId: string): Promise<TripDetectionCount> {
+    const rows = await this.db.$queryRaw<{ severity: string; count: number }[]>`
+      SELECT sl.name AS severity, COUNT(d.id)::int AS count
+      FROM severity_levels sl
+      LEFT JOIN detections d ON d.severity_level_id = sl.id AND d.trip_id = ${tripId}::uuid
+      GROUP BY sl.id, sl.name, sl.min_area_ratio
+      ORDER BY sl.min_area_ratio`;
+    return {
+      total: rows.reduce((sum, row) => sum + row.count, 0),
+      bySeverity: rows.map((row) => ({ severity: row.severity, count: row.count })),
+    };
   }
 }
 
