@@ -6,10 +6,19 @@ import {
   parameterRepository,
   type ParameterRepository,
 } from '../repositories/parameter.repository.js';
-import { tripRepository, type TripRepository } from '../repositories/trip.repository.js';
+import {
+  detectionRepository,
+  type DetectionRepository,
+  type TripDetectionCount,
+} from '../repositories/detection.repository.js';
+import {
+  tripRepository,
+  type TripRecord,
+  type TripRepository,
+} from '../repositories/trip.repository.js';
 import { MAX_BATCH_SIZE } from '../detections/batch-input.js';
-import { chooseStartedAt } from '../trips/trip-rules.js';
-import type { StartTripInput } from '../trips/trip-input.js';
+import { chooseEndedAt, chooseStartedAt } from '../trips/trip-rules.js';
+import type { EndTripInput, StartTripInput } from '../trips/trip-input.js';
 import { orUnavailable } from './database-errors.js';
 
 /** The GPS accuracy accepted when the table of parameters does not say otherwise. */
@@ -24,10 +33,21 @@ export interface StartedTrip {
   limits: { maxGpsAccuracyM: number; maxBatchSize: number };
 }
 
+/** A trip as the phone sees it. */
+export interface TripView {
+  id: string;
+  startedAt: Date;
+  endedAt: Date | null;
+  framesAnalyzed: number;
+  distanceM: number;
+  detections: TripDetectionCount;
+}
+
 export interface TripServiceDependencies {
   models: Pick<AiModelRepository, 'findActive'>;
   devices: Pick<DeviceRepository, 'findOrCreate'>;
-  trips: Pick<TripRepository, 'create'>;
+  trips: Pick<TripRepository, 'create' | 'findOwned' | 'finish'>;
+  detections: Pick<DetectionRepository, 'countByTrip'>;
   parameters: Pick<ParameterRepository, 'getNumber'>;
   clock: () => Date;
 }
@@ -41,6 +61,7 @@ export class TripService {
       models: aiModelRepository,
       devices: deviceRepository,
       trips: tripRepository,
+      detections: detectionRepository,
       parameters: parameterRepository,
       clock: () => new Date(),
       ...deps,
@@ -87,6 +108,47 @@ export class TripService {
     });
   }
 
+  /**
+   * Closes a trip of the person with its counters, and answers the trip as it is.
+   *
+   * It is safe to send twice: a phone that did not hear the answer sends it again, and the trip
+   * that is already closed is answered as it was closed the first time, without changes. The
+   * trip of someone else is "not found", the same as one that does not exist.
+   */
+  async finish(userId: string, tripId: string, input: EndTripInput): Promise<TripView> {
+    return orUnavailable('Could not close a trip', async () => {
+      const trip = await this.deps.trips.findOwned(userId, tripId);
+      if (!trip) {
+        throw tripNotFound();
+      }
+      if (trip.endedAt === null) {
+        const endedAt = chooseEndedAt(input.endedAt, trip.startedAt, this.deps.clock());
+        await this.deps.trips.finish(userId, tripId, {
+          endedAt,
+          framesAnalyzed: input.framesAnalyzed,
+          distanceM: input.distanceM,
+        });
+      }
+      // Read again: it is the trip as stored, whoever closed it (this call or a faster twin).
+      const closed = await this.deps.trips.findOwned(userId, tripId);
+      if (!closed) {
+        throw tripNotFound();
+      }
+      return this.view(closed);
+    });
+  }
+
+  private async view(trip: TripRecord): Promise<TripView> {
+    return {
+      id: trip.id,
+      startedAt: trip.startedAt,
+      endedAt: trip.endedAt,
+      framesAnalyzed: trip.framesAnalyzed,
+      distanceM: trip.distanceM,
+      detections: await this.deps.detections.countByTrip(trip.id),
+    };
+  }
+
   private async activeModel(): Promise<ActiveModel> {
     const model = await this.deps.models.findActive();
     if (!model) {
@@ -94,6 +156,10 @@ export class TripService {
     }
     return model;
   }
+}
+
+function tripNotFound(): AppError {
+  return new AppError(404, 'TRIP_NOT_FOUND', 'No trip of yours has that id');
 }
 
 export const tripService = new TripService();

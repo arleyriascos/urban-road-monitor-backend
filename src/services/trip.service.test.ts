@@ -25,14 +25,51 @@ function setup(overrides: { model?: typeof MODEL | null; accuracy?: number } = {
     findActive: vi.fn(async () => (overrides.model === undefined ? MODEL : overrides.model)),
   };
   const devices = { findOrCreate: vi.fn(async () => ({ id: 'device-1', created: true })) };
+  const stored = new Map<string, TripRecord>();
   const trips = {
-    create: vi.fn(async (input: { startedAt: Date }) => tripRecord({ startedAt: input.startedAt })),
+    create: vi.fn(async (input: { startedAt: Date }) => {
+      const record = tripRecord({ startedAt: input.startedAt });
+      stored.set(record.id, record);
+      return record;
+    }),
+    findOwned: vi.fn(async (userId: string, tripId: string) => {
+      const record = stored.get(tripId);
+      return record && record.userId === userId ? record : null;
+    }),
+    finish: vi.fn(
+      async (
+        userId: string,
+        tripId: string,
+        end: { endedAt: Date; framesAnalyzed: number; distanceM: number },
+      ) => {
+        const record = stored.get(tripId);
+        if (!record || record.userId !== userId || record.endedAt !== null) {
+          return null;
+        }
+        const closed = { ...record, ...end };
+        stored.set(tripId, closed);
+        return closed;
+      },
+    ),
+  };
+  const detections = {
+    countByTrip: vi.fn(async () => ({
+      total: 5,
+      bySeverity: [{ severity: 'leve', count: 5 }],
+    })),
   };
   const parameters = {
     getNumber: vi.fn(async (_key: string, fallback: number) => overrides.accuracy ?? fallback),
   };
-  const service = new TripService({ models, devices, trips, parameters, clock: () => NOW });
-  return { service, models, devices, trips, parameters };
+  const service = new TripService({
+    models,
+    devices,
+    trips,
+    detections,
+    parameters,
+    clock: () => NOW,
+  });
+  return { service, models, devices, trips, detections, parameters, stored };
 }
 
 afterEach(() => {
@@ -130,5 +167,81 @@ describe('TripService.start', () => {
     await expect(
       service.start('user-1', { device: { platform: 'android' }, modelVersion: '1.0.0' }),
     ).rejects.toMatchObject({ statusCode: 503, code: 'DATABASE_UNAVAILABLE' });
+  });
+});
+
+describe('TripService.finish', () => {
+  const END = { framesAnalyzed: 7200, distanceM: 4210.55 };
+  const later = (ms: number) => new Date(NOW.getTime() + ms);
+
+  async function startedTrip(ctx: ReturnType<typeof setup>) {
+    return ctx.service.start('user-1', { device: { platform: 'android' }, modelVersion: '1.0.0' });
+  }
+
+  it('closes the trip with its counters and answers it with its detections', async () => {
+    const ctx = setup();
+    const { tripId } = await startedTrip(ctx);
+
+    const closed = await ctx.service.finish('user-1', tripId, END);
+
+    expect(closed).toMatchObject({ id: tripId, framesAnalyzed: 7200, distanceM: 4210.55 });
+    expect(closed.endedAt).toEqual(NOW);
+    expect(closed.detections.total).toBe(5);
+  });
+
+  it('believes the end time of the phone when it falls inside the trip', async () => {
+    const ctx = setup();
+    const { tripId } = await startedTrip(ctx);
+    ctx.stored.set(tripId, { ...ctx.stored.get(tripId)!, startedAt: later(-3_600_000) });
+
+    const closed = await ctx.service.finish('user-1', tripId, {
+      ...END,
+      endedAt: later(-60_000),
+    });
+
+    expect(closed.endedAt).toEqual(later(-60_000));
+  });
+
+  it('answers the same trip when it is sent twice, without rewriting its numbers', async () => {
+    const ctx = setup();
+    const { tripId } = await startedTrip(ctx);
+    await ctx.service.finish('user-1', tripId, END);
+
+    const again = await ctx.service.finish('user-1', tripId, { framesAnalyzed: 1, distanceM: 1 });
+
+    expect(again).toMatchObject({ framesAnalyzed: 7200, distanceM: 4210.55 });
+    expect(ctx.trips.finish).toHaveBeenCalledTimes(1);
+  });
+
+  it('says "not found" for the trip of someone else, as for one that does not exist', async () => {
+    const ctx = setup();
+    const { tripId } = await startedTrip(ctx);
+
+    await expect(ctx.service.finish('user-2', tripId, END)).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRIP_NOT_FOUND',
+    });
+    await expect(ctx.service.finish('user-1', 'nope', END)).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRIP_NOT_FOUND',
+    });
+  });
+
+  it('answers the stored trip when another request closed it first', async () => {
+    const ctx = setup();
+    const { tripId } = await startedTrip(ctx);
+    ctx.trips.finish.mockImplementationOnce(async () => {
+      ctx.stored.set(tripId, {
+        ...ctx.stored.get(tripId)!,
+        endedAt: later(1000),
+        framesAnalyzed: 50,
+        distanceM: 500,
+      });
+      return null;
+    });
+
+    const closed = await ctx.service.finish('user-1', tripId, END);
+
+    expect(closed).toMatchObject({ framesAnalyzed: 50, distanceM: 500 });
   });
 });
