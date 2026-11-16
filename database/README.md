@@ -17,6 +17,7 @@ Base de datos del proyecto **Detección de Baches y Rutas en Vías Urbanas** (Po
 | `07_add_geometry_to_segment_status_view.sql` | Migración: agrega `geometry` a la vista `v_segment_status`, que es la que lee el mapa |
 | `08_auth_base.sql` | Migración: base de las sesiones y los roles de la Etapa 3 (ver más abajo) |
 | `09_detections_base.sql` | Migración: base de los viajes y las detecciones de la Etapa 4 (ver más abajo) |
+| `10_consolidation_base.sql` | Migración: base de la consolidación de baches de la Etapa 4 (ver más abajo) |
 
 ## Cómo ejecutarlo
 
@@ -45,11 +46,12 @@ dañar nada.
 | 07 | La vista `v_segment_status` incluye `geometry` al final |
 | 08 | `sessions.refresh_token_hash` pasa a `token_hash` (guarda el SHA-256 del identificador de sesión). Nuevo rol `usuario`, sin permisos propios. `auth_logs` suma la columna `reason` y más tipos de evento. Los correos se guardan en minúsculas (`chk_users_email_lowercase`). Se puede ejecutar dos veces sin dañar nada y termina con una consulta de verificación |
 | 09 | Límites de gravedad: leve por debajo del 1 % de la foto, moderado de 1 % a 4 % y grave desde 4 %, los mismos que ya dibuja la pantalla de la cámara. El modelo activo pasa a ser el que corre en el celular: ONNX, 416 px y umbral de confianza 0.40. Nuevo índice para listar los viajes de una persona. Se puede ejecutar dos veces sin dañar nada y termina con dos consultas de verificación. En Neon `production` se ejecuta **antes** de desplegar el código que la usa |
+| 10 | La consolidación (agrupar las detecciones en baches) deja registro de cada corrida: `clustering_runs` suma `status` (`running`, `finished` o `failed`), `trigger_kind` (`automatic` o `manual`), quién la pidió, los días leídos, los grupos hallados, los baches quitados y el error si falló. Un índice único parcial (`uq_clustering_one_running`) impide que haya dos corridas a la vez, aunque haya varios servidores. Dos parámetros nuevos: `clustering_window_days` (90, los días de detecciones que lee cada corrida) y `clustering_min_interval_s` (120, la pausa mínima entre dos corridas automáticas). Índice en `detections.received_at`. Se puede ejecutar dos veces sin dañar nada. En Neon `production` se ejecuta **antes** de desplegar el código que la usa |
 
 ## Volver a crear desde cero
 
 Clic derecho sobre `urban_road_monitor` → **Delete**, crearla de nuevo vacía y ejecutar, en orden:
-`00_run_all.sql`, `05_app_user.sql` y las migraciones `06`, `07`, `08`, `09`, etc.
+`00_run_all.sql`, `05_app_user.sql` y las migraciones `06`, `07`, `08`, `09`, `10`, etc.
 
 ## Convenciones
 
