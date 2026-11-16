@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { openApiDocument } from './openapi.js';
 
 describe('openApiDocument', () => {
-  it('lists the health, map, route, auth and internal endpoints', () => {
+  it('lists the health, map, route, auth, trips and internal endpoints', () => {
     expect(Object.keys(openApiDocument.paths).sort()).toEqual([
       '/api/auth/google',
       '/api/auth/logout',
@@ -13,16 +13,19 @@ describe('openApiDocument', () => {
       '/api/road-network/stats',
       '/api/road-segments',
       '/api/routes',
+      '/api/trips',
+      '/api/trips/{id}',
       '/internal/graph',
     ]);
   });
 
-  it('lists the Health, Map, Routes, Auth and Internal tags', () => {
+  it('lists the Health, Map, Routes, Auth, Trips and Internal tags', () => {
     expect(openApiDocument.tags.map((tag) => tag.name)).toEqual([
       'Health',
       'Map',
       'Routes',
       'Auth',
+      'Trips',
       'Internal',
     ]);
   });
