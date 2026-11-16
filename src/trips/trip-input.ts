@@ -31,3 +31,22 @@ export const startTripSchema = z
   .strict();
 
 export type StartTripInput = z.infer<typeof startTripSchema>;
+
+/** The most frames one trip can analyze: a day of camera at 4 frames per second is 345,600. */
+export const MAX_FRAMES_ANALYZED = 1_000_000;
+
+/** The longest trip the API accepts, in meters (1,000 km). */
+export const MAX_TRIP_DISTANCE_M = 1_000_000;
+
+/** What the phone sends to PATCH /api/trips/:id when the camera stops. */
+export const endTripSchema = z
+  .object({
+    /** When the camera stopped, if the phone's clock should be trusted. Default: now. */
+    endedAt: isoDate.optional(),
+    framesAnalyzed: z.number().int().min(0).max(MAX_FRAMES_ANALYZED),
+    /** Meters travelled while the camera was on. */
+    distanceM: z.number().finite().min(0).max(MAX_TRIP_DISTANCE_M),
+  })
+  .strict();
+
+export type EndTripInput = z.infer<typeof endTripSchema>;
