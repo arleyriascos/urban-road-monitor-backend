@@ -90,6 +90,33 @@ describe('RoadSummaryService', () => {
     });
   });
 
+  describe('streetsOfRoute', () => {
+    it('describes the streets of a route', async () => {
+      const { service } = setup();
+      const streets = await service.streetsOfRoute([
+        { order: 1, segmentId: 101 },
+        { order: 2, segmentId: 102 },
+        { order: 3, segmentId: 103 },
+      ]);
+      expect(streets).toHaveLength(1);
+      expect(streets[0]).toMatchObject({ roadName: 'Calle 1', fromOrder: 1, toOrder: 3, steps: 3 });
+      expect(streets[0]?.summary).toMatchObject({
+        segments: 3,
+        confirmedPotholes: 1,
+        damageScore: 0.3,
+      });
+    });
+
+    it('answers 503 when the database fails', async () => {
+      const { service, repository } = setup();
+      repository.findStamp.mockRejectedValueOnce(new Error('down'));
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      await expect(service.streetsOfRoute([{ order: 1, segmentId: 101 }])).rejects.toMatchObject({
+        statusCode: 503,
+      });
+    });
+  });
+
   describe('freshness', () => {
     it('reads the streets once and checks only the stamp until the time to live passes', async () => {
       const { service, repository, advance } = setup();

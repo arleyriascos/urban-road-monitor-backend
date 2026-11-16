@@ -119,7 +119,29 @@ export const routeSchemas = {
           features: { type: 'array', items: { $ref: '#/components/schemas/RouteStep' } },
         },
       },
+      streets: {
+        type: 'array',
+        description:
+          'The streets the route follows, in order, with the potholes along each part. Steps in ' +
+          'a row on the same street make one entry. It is left out (the route is still ' +
+          'answered) if the streets cannot be worked out right then.',
+        items: { $ref: '#/components/schemas/RouteStreet' },
+      },
     },
+  },
+  RouteStreet: {
+    type: 'object',
+    properties: {
+      roadId: { type: 'integer', example: 7 },
+      roadName: { type: ['string', 'null'], example: 'Calle 18' },
+      fromOrder: { type: 'integer', description: 'The first step of the route on this street' },
+      toOrder: { type: 'integer', description: 'The last step of the route on this street' },
+      steps: { type: 'integer' },
+      fromSegmentIndex: { type: 'integer' },
+      toSegmentIndex: { type: 'integer' },
+      summary: { $ref: '#/components/schemas/StretchSummary' },
+    },
+    required: ['roadId', 'roadName', 'fromOrder', 'toOrder', 'steps', 'summary'],
   },
 };
 

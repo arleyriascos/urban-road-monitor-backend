@@ -47,8 +47,22 @@ const body = {
   destination: { latitude: 1.215, longitude: -77.279 },
 };
 
-function appWith(findRoute: RouteService['findRoute']): Express {
-  const controller = new RouteController({ findRoute });
+const STREET = {
+  roadId: 7,
+  roadName: 'Calle 18',
+  fromOrder: 1,
+  toOrder: 1,
+  steps: 1,
+  fromSegmentIndex: 4,
+  toSegmentIndex: 4,
+  summary: { segments: 1 },
+};
+
+function appWith(
+  findRoute: RouteService['findRoute'],
+  streetsOfRoute: (steps: unknown) => Promise<unknown> = async () => [STREET],
+): Express {
+  const controller = new RouteController({ findRoute }, { streetsOfRoute } as never);
   const app = express();
   app.use(express.json());
   app.post('/api/routes', controller.findRoute);
@@ -83,9 +97,37 @@ describe('POST /api/routes', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
-    expect(json).toEqual(answer);
+    expect(json).toEqual({ ...answer, streets: [STREET] });
     const sent = findRoute.mock.calls[0] as unknown as [RouteRequest];
     expect(sent[0]).toMatchObject({ criterion: 'shortest', algorithm: 'astar' });
+  });
+
+  it('asks for the streets of the steps of the route, in order', async () => {
+    const streetsOfRoute = vi.fn(async () => [STREET]);
+    await post(
+      appWith(
+        vi.fn(async () => answer),
+        streetsOfRoute,
+      ),
+      body,
+    );
+    expect(streetsOfRoute).toHaveBeenCalledWith([{ order: 1, segmentId: 11 }]);
+  });
+
+  it('answers the route without streets when they cannot be worked out', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const failing = async () => {
+      throw new Error('down');
+    };
+    const { response, json } = await post(
+      appWith(
+        vi.fn(async () => answer),
+        failing,
+      ),
+      body,
+    );
+    expect(response.status).toBe(200);
+    expect(json).toEqual(answer);
   });
 
   it.each([

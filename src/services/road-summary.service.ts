@@ -1,5 +1,6 @@
 import { AppError } from '../errors/app-error.js';
 import { RoadIndex, type RoadStretch } from '../roads/road-index.js';
+import { groupRouteStreets, type RouteStepRef, type RouteStreet } from '../roads/route-streets.js';
 import { roundSummary, type StretchSummary } from '../roads/stretch-summary.js';
 import {
   roadFactsRepository,
@@ -96,6 +97,11 @@ export class RoadSummaryService {
       throw new AppError(404, 'ROAD_NOT_FOUND', 'There is no street with that id');
     }
     return present(stretch);
+  }
+
+  /** The streets a route follows, in order, with the potholes along each part. */
+  async streetsOfRoute(steps: readonly RouteStepRef[]): Promise<RouteStreet[]> {
+    return groupRouteStreets(steps, await this.ready());
   }
 
   /** The index, brought up to date if the last check is older than the time to live. */
