@@ -207,3 +207,12 @@ describe('the limits of the application', () => {
     }
   });
 });
+
+describe('the limits of trips and detections', () => {
+  it('lets 20 trip requests and 60 batches of detections per minute', async () => {
+    const { TRIP_REQUESTS_PER_MINUTE, DETECTION_BATCHES_PER_MINUTE } =
+      await import('./rate-limit.js');
+    expect(TRIP_REQUESTS_PER_MINUTE).toBe(20);
+    expect(DETECTION_BATCHES_PER_MINUTE).toBe(60);
+  });
+});

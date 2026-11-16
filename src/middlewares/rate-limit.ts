@@ -100,3 +100,19 @@ export const loginRateLimit = createRateLimit({
   limit: LOGIN_ATTEMPTS_PER_MINUTE,
   message: (limit) => `Too many sign-in attempts: the limit is ${limit} per minute`,
 });
+
+/** Trip requests per IP address and minute (start, close, list, read). Counted apart from the rest. */
+export const TRIP_REQUESTS_PER_MINUTE = 20;
+
+export const tripsRateLimit = createRateLimit({
+  limit: TRIP_REQUESTS_PER_MINUTE,
+  message: (limit) => `Too many trip requests: the limit is ${limit} per minute`,
+});
+
+/** Batches of detections per IP address and minute. A batch holds up to 100 detections. */
+export const DETECTION_BATCHES_PER_MINUTE = 60;
+
+export const detectionsRateLimit = createRateLimit({
+  limit: DETECTION_BATCHES_PER_MINUTE,
+  message: (limit) => `Too many batches of detections: the limit is ${limit} per minute`,
+});
