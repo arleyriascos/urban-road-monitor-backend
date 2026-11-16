@@ -132,3 +132,11 @@ export const summaryRateLimit = createRateLimit({
   limit: SUMMARY_REQUESTS_PER_MINUTE,
   message: (limit) => `Too many street summary requests: the limit is ${limit} per minute`,
 });
+
+/** Typing in the search box asks a few times a second; the page waits a moment between letters. */
+export const SEARCH_REQUESTS_PER_MINUTE = 120;
+
+export const searchRateLimit = createRateLimit({
+  limit: SEARCH_REQUESTS_PER_MINUTE,
+  message: (limit) => `Too many street search requests: the limit is ${limit} per minute`,
+});

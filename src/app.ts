@@ -33,6 +33,7 @@ export function createApp() {
         '/api/road-segments',
         '/api/potholes',
         '/api/road-network/stats',
+        '/api/roads/search',
         '/api/road-segments/:id/summary',
         '/api/roads/:id/summary',
         'POST /api/routes',

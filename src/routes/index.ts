@@ -4,6 +4,7 @@ import { clusteringRouter } from './clustering.routes.js';
 import { docsRouter } from './docs.routes.js';
 import { healthRouter } from './health.routes.js';
 import { mapRouter } from './map.routes.js';
+import { roadSearchRouter } from './road-search.routes.js';
 import { roadSummaryRouter } from './road-summary.routes.js';
 import { routeRouter } from './route.routes.js';
 import { tripRouter } from './trip.routes.js';
@@ -13,6 +14,7 @@ export const apiRouter = Router();
 
 apiRouter.use(healthRouter);
 apiRouter.use(mapRouter);
+apiRouter.use(roadSearchRouter);
 apiRouter.use(roadSummaryRouter);
 apiRouter.use(routeRouter);
 apiRouter.use(authRouter);
