@@ -76,25 +76,30 @@ El mismo valor va en el backend y en el servicio de IA. Nunca se escribe en `.en
 
 ## Endpoints
 
-| Método | Ruta                            | Respuesta                                                                                      |
-| ------ | ------------------------------- | ---------------------------------------------------------------------------------------------- |
-| GET    | `/`                             | Estado general de la API                                                                       |
-| GET    | `/api/health`                   | Estado del servidor y de la base de datos (200 si está conectada, 503 si no)                   |
-| GET    | `/api/hello`                    | "Hello World" con la confirmación de que la base de datos respondió (503 si no responde)       |
-| GET    | `/api/docs`                     | Documentación interactiva (Swagger)                                                            |
-| GET    | `/api/docs.json`                | Documento OpenAPI en JSON                                                                      |
-| GET    | `/api/road-segments`            | Todas las calles como GeoJSON, con el color de cada tramo (ver `docs/API-MAPA.md`)             |
-| GET    | `/api/potholes`                 | Los baches como GeoJSON; `?includeRepaired=true` incluye los reparados                         |
-| GET    | `/api/road-network/stats`       | Totales y leyenda del mapa                                                                     |
-| POST   | `/api/routes`                   | Ruta entre dos puntos del mapa, lista para dibujar (ver "Rutas" más abajo)                     |
-| POST   | `/api/auth/google`              | Ingreso con Google: recibe el token de Google y entrega una sesión (ver "Ingreso")             |
-| GET    | `/api/auth/me`                  | Quién es la persona de la sesión, con sus roles y permisos (necesita sesión)                   |
-| POST   | `/api/auth/logout`              | Cierra la sesión que hace la petición, y solo esa (necesita sesión; responde 204)              |
-| POST   | `/api/trips`                    | Abre un viaje y entrega las reglas de las detecciones (permiso `detections.create`)            |
-| PATCH  | `/api/trips/:id`                | Cierra un viaje con sus cuadros y su distancia (permiso `detections.create`)                   |
-| GET    | `/api/trips`                    | Los viajes de la persona, página por página (permiso `trips.view_own`)                         |
-| GET    | `/api/trips/:id`                | Un viaje de la persona, con sus detecciones por severidad (permiso `trips.view_own`)           |
-| POST   | `/api/trips/:tripId/detections` | Un lote de hasta 100 detecciones; se puede reenviar sin duplicar (permiso `detections.create`) |
+| Método | Ruta                             | Respuesta                                                                                             |
+| ------ | -------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| GET    | `/`                              | Estado general de la API                                                                              |
+| GET    | `/api/health`                    | Estado del servidor y de la base de datos (200 si está conectada, 503 si no)                          |
+| GET    | `/api/hello`                     | "Hello World" con la confirmación de que la base de datos respondió (503 si no responde)              |
+| GET    | `/api/docs`                      | Documentación interactiva (Swagger)                                                                   |
+| GET    | `/api/docs.json`                 | Documento OpenAPI en JSON                                                                             |
+| GET    | `/api/road-segments`             | Todas las calles como GeoJSON, con el color de cada tramo (ver `docs/API-MAPA.md`)                    |
+| GET    | `/api/potholes`                  | Los baches como GeoJSON; `?includeRepaired=true` incluye los reparados                                |
+| GET    | `/api/road-network/stats`        | Totales y leyenda del mapa                                                                            |
+| GET    | `/api/roads/search`              | Sugiere calles por el comienzo del nombre, con dónde centrar el mapa (ver `docs/API-CALLES.md`)       |
+| GET    | `/api/road-segments/:id/summary` | Resumen de un tramo: la parte de la calle a su alrededor y la calle entera (ver `docs/API-CALLES.md`) |
+| GET    | `/api/roads/:id/summary`         | Resumen de una calle, o de la parte entre `from` y `to` (ver `docs/API-CALLES.md`)                    |
+| POST   | `/api/routes`                    | Ruta entre dos puntos del mapa, lista para dibujar (ver "Rutas" más abajo)                            |
+| POST   | `/api/auth/google`               | Ingreso con Google: recibe el token de Google y entrega una sesión (ver "Ingreso")                    |
+| GET    | `/api/auth/me`                   | Quién es la persona de la sesión, con sus roles y permisos (necesita sesión)                          |
+| POST   | `/api/auth/logout`               | Cierra la sesión que hace la petición, y solo esa (necesita sesión; responde 204)                     |
+| POST   | `/api/trips`                     | Abre un viaje y entrega las reglas de las detecciones (permiso `detections.create`)                   |
+| PATCH  | `/api/trips/:id`                 | Cierra un viaje con sus cuadros y su distancia (permiso `detections.create`)                          |
+| GET    | `/api/trips`                     | Los viajes de la persona, página por página (permiso `trips.view_own`)                                |
+| GET    | `/api/trips/:id`                 | Un viaje de la persona, con sus detecciones por severidad (permiso `trips.view_own`)                  |
+| POST   | `/api/trips/:tripId/detections`  | Un lote de hasta 100 detecciones; se puede reenviar sin duplicar (permiso `detections.create`)        |
+| POST   | `/api/clustering/runs`           | Pide una consolidación de baches ahora; responde 202 (permiso `clustering.run`)                       |
+| GET    | `/api/clustering/runs`           | Estado del coordinador y últimas corridas (permiso `clustering.run`)                                  |
 
 Los errores siempre responden en JSON con la forma `{ "error": { "code", "message" } }`, y algunos agregan `details` con datos para el frontend.
 
@@ -115,7 +120,7 @@ Los errores siempre responden en JSON con la forma `{ "error": { "code", "messag
 - **`criterion`**: `shortest` (la más corta, ignora los baches), `balanced` (por defecto) o `avoid_potholes` (evita los baches). Internamente es el factor `k` = 0, 1 o 3 del costo `longitud × (1 + k × daño)`.
 - **`algorithm`** (opcional): `astar` (por defecto) o `dijkstra`. Dan la misma ruta; sirve para comparar en la presentación cuántos nodos explora cada uno.
 
-La respuesta trae `criterion`, `algorithm`, `fromCache` (si salió de la caché), `origin` y `destination` (la esquina a la que se ajustó cada clic y a cuántos metros quedó), `summary` (`lengthM`, `cost`, `steps`, `exploredNodes`, `computationMs`) y `route`: un GeoJSON `FeatureCollection` con **una línea por tramo, en orden de viaje y con el trazado ya en el sentido del recorrido**. Cada tramo tiene en `properties` su `order`, `segmentId`, `roadName`, `reversed`, `lengthM`, `damageScore` y `cost`, así que el recorrido "anterior / siguiente" es avanzar por la lista.
+La respuesta trae `criterion`, `algorithm`, `fromCache` (si salió de la caché), `origin` y `destination` (la esquina a la que se ajustó cada clic y a cuántos metros quedó), `summary` (`lengthM`, `cost`, `steps`, `exploredNodes`, `computationMs`) y `route`: un GeoJSON `FeatureCollection` con **una línea por tramo, en orden de viaje y con el trazado ya en el sentido del recorrido**. Cada tramo tiene en `properties` su `order`, `segmentId`, `roadName`, `reversed`, `lengthM`, `damageScore` y `cost`, así que el recorrido "anterior / siguiente" es avanzar por la lista. Además trae `streets`: las calles por las que pasa la ruta, en orden, con los baches de cada parte (opcional: si no se pueden calcular en ese momento, la ruta se responde sin él; ver `docs/API-CALLES.md`).
 
 | Estado | Código                             | Qué mostrar                                                                                                                                                             |
 | ------ | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -186,6 +191,14 @@ El teléfono abre un viaje, manda lotes de detecciones mientras maneja y lo cier
 
 El detalle, con ejemplos y todos los errores, está en `docs/API-VIAJES.md`. Antes de desplegar hay que correr `database/09_detections_base.sql` en la base (es idempotente).
 
+### Consolidación de baches (para el administrador)
+
+Las detecciones de los teléfonos se agrupan en baches con DBSCAN (en el servicio de IA) solas, después de cada envío y con una pausa mínima de 2 minutos entre corridas; un administrador puede pedir una con `POST /api/clustering/runs`. Solo los baches `confirmado` cambian el daño de los tramos y las rutas. El detalle está en `docs/API-CONSOLIDACION.md`. Antes de desplegar hay que correr `database/10_consolidation_base.sql` en la base (es idempotente).
+
+### Calles: resúmenes y buscador (para el frontend)
+
+`GET /api/road-segments/:id/summary` y `GET /api/roads/:id/summary` dicen cuántos baches hay y cuánto daño suman en un tramo, en la parte de la calle alrededor de él o en la calle entera; `GET /api/roads/search?q=` sugiere calles por su nombre. Son públicos. Los resúmenes salen de un árbol de segmentos por calle y el buscador de un trie, ambos en memoria (ver "Estructuras de datos" más abajo y `docs/API-CALLES.md`).
+
 ### Endpoint interno
 
 Solo lo usa el servicio de IA para calcular rutas. No está en la lista de `GET /` y necesita el encabezado `Authorization: Bearer <INTERNAL_TOKEN>`.
@@ -219,6 +232,17 @@ Solo lo usa el servicio de IA para calcular rutas. No está en la lista de `GET 
 
 Cada estructura se prueba de dos formas: con ejemplos legibles y con miles de operaciones al azar (semilla fija) comparadas después de cada paso contra una versión simple hecha solo con arreglos. La función hash se prueba con los valores publicados de FNV-1a, y las colisiones se fuerzan a propósito.
 
+### Árbol de segmentos y trie
+
+Dos estructuras más, también escritas a mano, para las calles:
+
+| Estructura         | Archivo                                              | Cómo funciona                                                                                                                                                                                     | Complejidad                                                               |
+| ------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Árbol de segmentos | `segment-tree.ts` (la usa `src/roads/road-index.ts`) | Un árbol por calle sobre sus tramos en orden: cada hoja es un tramo y cada nodo suma a sus hijos con una operación asociativa (largo, baches, daño). Se arma de abajo hacia arriba, sin recursión | Sumar una parte de la calle y cambiar un tramo, O(log n); armarlo, O(n)   |
+| Trie               | `trie.ts` (lo usa `src/roads/road-search-index.ts`)  | Los nombres de las calles se escriben letra por letra en un árbol; lo que empieza con un prefijo cuelga de un mismo nodo. Los resultados salen en orden alfabético                                | Insertar y buscar un prefijo, O(largo del prefijo) más lo que se devuelve |
+
+Se prueban igual que las anteriores: con ejemplos y con 40 semillas al azar comparadas contra una versión simple.
+
 ## Estructura
 
 Arquitectura por capas, siguiendo el diagrama del profesor: rutas → controladores → servicios → repositorios → base de datos.
@@ -239,11 +263,13 @@ src/
 ├── repositories/      Acceso a la base de datos con Prisma (patrón Repository)
 ├── osm/               Importación de la red vial: consulta, lectura, tramos e informe
 ├── routes/            Rutas de la API REST
+├── clustering/        Consolidación: contrato con la IA, estado y reconciliación de los baches (funciones puras)
+├── roads/             Calles en memoria: árbol de segmentos por calle, calles de una ruta y buscador por nombre
 ├── routing/           Petición de ruta: criterios, redondeo de los clics y clave de la caché
 ├── scripts/           Comandos que se ejecutan a mano, como import-roads y user-role
 ├── seed/              Baches de prueba: generador, corredores, plan y protecciones
 ├── services/          Lógica de negocio
-├── structures/        Estructuras escritas a mano: tabla hash, lista doble y caché LRU
+├── structures/        Estructuras escritas a mano: tabla hash, lista doble, caché LRU, árbol de segmentos y trie
 ├── test/              Apoyo para las pruebas: base PostgreSQL (con sus protecciones) y claves que hacen de Google
 ├── app.ts             Configuración de Express
 └── server.ts          Punto de entrada: inicia el servidor
@@ -256,7 +282,7 @@ src/
 Para activarlas, una sola vez en tu computador:
 
 1. Crea una base vacía llamada `urban_road_monitor_test` (en pgAdmin, o con `psql -U postgres -c "CREATE DATABASE urban_road_monitor_test"`).
-2. Ejecútale, conectado como dueño de la base, en este orden: `database/00_run_all.sql`, `06_add_segment_geometry.sql`, `07_add_geometry_to_segment_status_view.sql` y `08_auth_base.sql`. No hace falta `05_app_user.sql`.
+2. Ejecútale, conectado como dueño de la base, en este orden: `database/00_run_all.sql`, `06_add_segment_geometry.sql`, `07_add_geometry_to_segment_status_view.sql`, `08_auth_base.sql`, `09_detections_base.sql` y `10_consolidation_base.sql`. No hace falta `05_app_user.sql`.
 3. Agrega a tu `.env`: `TEST_DATABASE_URL=postgresql://postgres:TU_CONTRASEÑA@localhost:5432/urban_road_monitor_test`.
 
 Protecciones: estas pruebas vacían tablas, así que solo aceptan una base en `localhost` cuyo nombre termine en `_test`. Una dirección de Neon o de otra base se rechaza antes de conectar. Solo `TEST_DATABASE_URL` se lee del `.env` para las pruebas; el `DATABASE_URL` real nunca llega a ellas.
