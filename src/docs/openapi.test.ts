@@ -13,6 +13,8 @@ describe('openApiDocument', () => {
       '/api/potholes',
       '/api/road-network/stats',
       '/api/road-segments',
+      '/api/road-segments/{id}/summary',
+      '/api/roads/{id}/summary',
       '/api/routes',
       '/api/trips',
       '/api/trips/{id}',
@@ -21,10 +23,11 @@ describe('openApiDocument', () => {
     ]);
   });
 
-  it('lists the Health, Map, Routes, Auth, Trips, Clustering and Internal tags', () => {
+  it('lists the Health, Map, Streets, Routes, Auth, Trips, Clustering and Internal tags', () => {
     expect(openApiDocument.tags.map((tag) => tag.name)).toEqual([
       'Health',
       'Map',
+      'Streets',
       'Routes',
       'Auth',
       'Trips',

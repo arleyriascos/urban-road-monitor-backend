@@ -124,3 +124,11 @@ export const clusteringRateLimit = createRateLimit({
   limit: CLUSTERING_REQUESTS_PER_MINUTE,
   message: (limit) => `Too many consolidation requests: the limit is ${limit} per minute`,
 });
+
+/** Street summaries per IP address and minute. The map asks for one each time a segment is touched. */
+export const SUMMARY_REQUESTS_PER_MINUTE = 120;
+
+export const summaryRateLimit = createRateLimit({
+  limit: SUMMARY_REQUESTS_PER_MINUTE,
+  message: (limit) => `Too many street summary requests: the limit is ${limit} per minute`,
+});
