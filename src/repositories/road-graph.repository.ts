@@ -51,8 +51,8 @@ const SNAPSHOT_TIMEOUT_MS = 20_000;
 /**
  * Version of the road graph: an MD5 of the data the graph uses, in id order.
  * It changes if and only if a node or a segment of the graph changes (ids, ends,
- * length, damage, one-way, coordinates). Changes the graph does not use, such as
- * the geometry or the severity, leave it as it is.
+ * length, damage, one-way, coordinates, drawn shape). Changes the graph does not use, such as
+ * the severity of a pothole, leave it as it is.
  *
  * It does not rely on updated_at: NOW() is the start time of a transaction, so a long
  * transaction that commits after a short one could leave max(updated_at) unchanged.
@@ -61,7 +61,7 @@ const GRAPH_VERSION_SQL = Prisma.sql`
   SELECT md5(
     COALESCE((
       SELECT string_agg(
-               concat_ws(':', s.id, s.from_node_id, s.to_node_id, s.length_m, s.damage_score, s.is_oneway),
+               concat_ws(':', s.id, s.from_node_id, s.to_node_id, s.length_m, s.damage_score, s.is_oneway, s.geometry::text),
                ',' ORDER BY s.id)
       FROM road_segments s), '')
     || '|' ||

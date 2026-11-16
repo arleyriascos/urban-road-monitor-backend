@@ -62,6 +62,20 @@ describe.skipIf(!url)('RoadGraphRepository (real database)', () => {
     });
   });
 
+  it('changes the version when only the shape of a segment changes', async () => {
+    await insertSegment([
+      [1.2136, -77.2811],
+      [1.2146, -77.2801],
+    ]);
+    const before = await repository.getVersion();
+
+    await db.$executeRawUnsafe(
+      `UPDATE road_segments SET geometry = '[[1.2136,-77.2811],[1.2141,-77.2806],[1.2146,-77.2801]]'::jsonb WHERE id = ${BASE}`,
+    );
+
+    expect(await repository.getVersion()).not.toBe(before);
+  });
+
   it('answers the same version to the version query and to the snapshot', async () => {
     await insertSegment([
       [1.2136, -77.2811],
