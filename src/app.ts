@@ -42,6 +42,8 @@ export function createApp() {
         'GET /api/trips',
         'GET /api/trips/:id',
         'POST /api/trips/:tripId/detections',
+        'POST /api/clustering/runs',
+        'GET /api/clustering/runs',
       ],
     });
   });

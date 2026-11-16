@@ -116,3 +116,11 @@ export const detectionsRateLimit = createRateLimit({
   limit: DETECTION_BATCHES_PER_MINUTE,
   message: (limit) => `Too many batches of detections: the limit is ${limit} per minute`,
 });
+
+/** Requests per IP address and minute to the consolidation routes (the administrator's). */
+export const CLUSTERING_REQUESTS_PER_MINUTE = 10;
+
+export const clusteringRateLimit = createRateLimit({
+  limit: CLUSTERING_REQUESTS_PER_MINUTE,
+  message: (limit) => `Too many consolidation requests: the limit is ${limit} per minute`,
+});
