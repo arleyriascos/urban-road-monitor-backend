@@ -58,37 +58,43 @@ El mismo valor va en el backend y en el servicio de IA. Nunca se escribe en `.en
 
 ## Scripts
 
-| Comando                 | Qué hace                                                                           |
-| ----------------------- | ---------------------------------------------------------------------------------- |
-| `npm run dev`           | Inicia el servidor en modo desarrollo y lo reinicia al guardar cambios             |
-| `npm run build`         | Compila TypeScript a JavaScript en `dist/` (sin las pruebas)                       |
-| `npm start`             | Inicia el servidor compilado (lo usa Render)                                       |
-| `npm run typecheck`     | Revisa los tipos sin compilar                                                      |
-| `npm run lint`          | Revisa el código con ESLint                                                        |
-| `npm run format`        | Da formato al código con Prettier                                                  |
-| `npm test`              | Ejecuta las pruebas unitarias con Vitest                                           |
-| `npm run test:watch`    | Ejecuta las pruebas y las repite al guardar cambios                                |
-| `npm run db:pull`       | Lee las tablas de la base de datos y actualiza `prisma/schema.prisma`              |
-| `npm run import:roads`  | Importa la red vial de Pasto desde OpenStreetMap (ver `docs/IMPORTACION-OSM.md`)   |
-| `npm run seed:potholes` | Crea baches de prueba solo en la rama development (ver `docs/BACHES-DE-PRUEBA.md`) |
-| `npm run user:role`     | Da o quita un rol a una cuenta, con confirmación (ver `docs/AUTENTICACION.md`)     |
+| Comando                 | Qué hace                                                                                              |
+| ----------------------- | ----------------------------------------------------------------------------------------------------- |
+| `npm run dev`           | Inicia el servidor en modo desarrollo y lo reinicia al guardar cambios                                |
+| `npm run build`         | Compila TypeScript a JavaScript en `dist/` (sin las pruebas)                                          |
+| `npm start`             | Inicia el servidor compilado (lo usa Render)                                                          |
+| `npm run typecheck`     | Revisa los tipos sin compilar                                                                         |
+| `npm run lint`          | Revisa el código con ESLint                                                                           |
+| `npm run format`        | Da formato al código con Prettier                                                                     |
+| `npm test`              | Ejecuta las pruebas unitarias con Vitest                                                              |
+| `npm run test:watch`    | Ejecuta las pruebas y las repite al guardar cambios                                                   |
+| `npm run db:pull`       | Lee las tablas de la base de datos y actualiza `prisma/schema.prisma`                                 |
+| `npm run import:roads`  | Importa la red vial de Pasto desde OpenStreetMap (ver `docs/IMPORTACION-OSM.md`)                      |
+| `npm run seed:potholes` | Crea baches de prueba solo en la rama development (ver `docs/BACHES-DE-PRUEBA.md`)                    |
+| `npm run user:role`     | Da o quita un rol a una cuenta, con confirmación (ver `docs/AUTENTICACION.md`)                        |
+| `npm run trips:cleanup` | Borra los viajes de prueba de una cuenta; sin `--aplicar` solo los muestra (ver `docs/API-VIAJES.md`) |
 
 ## Endpoints
 
-| Método | Ruta                      | Respuesta                                                                                |
-| ------ | ------------------------- | ---------------------------------------------------------------------------------------- |
-| GET    | `/`                       | Estado general de la API                                                                 |
-| GET    | `/api/health`             | Estado del servidor y de la base de datos (200 si está conectada, 503 si no)             |
-| GET    | `/api/hello`              | "Hello World" con la confirmación de que la base de datos respondió (503 si no responde) |
-| GET    | `/api/docs`               | Documentación interactiva (Swagger)                                                      |
-| GET    | `/api/docs.json`          | Documento OpenAPI en JSON                                                                |
-| GET    | `/api/road-segments`      | Todas las calles como GeoJSON, con el color de cada tramo (ver `docs/API-MAPA.md`)       |
-| GET    | `/api/potholes`           | Los baches como GeoJSON; `?includeRepaired=true` incluye los reparados                   |
-| GET    | `/api/road-network/stats` | Totales y leyenda del mapa                                                               |
-| POST   | `/api/routes`             | Ruta entre dos puntos del mapa, lista para dibujar (ver "Rutas" más abajo)               |
-| POST   | `/api/auth/google`        | Ingreso con Google: recibe el token de Google y entrega una sesión (ver "Ingreso")       |
-| GET    | `/api/auth/me`            | Quién es la persona de la sesión, con sus roles y permisos (necesita sesión)             |
-| POST   | `/api/auth/logout`        | Cierra la sesión que hace la petición, y solo esa (necesita sesión; responde 204)        |
+| Método | Ruta                            | Respuesta                                                                                      |
+| ------ | ------------------------------- | ---------------------------------------------------------------------------------------------- |
+| GET    | `/`                             | Estado general de la API                                                                       |
+| GET    | `/api/health`                   | Estado del servidor y de la base de datos (200 si está conectada, 503 si no)                   |
+| GET    | `/api/hello`                    | "Hello World" con la confirmación de que la base de datos respondió (503 si no responde)       |
+| GET    | `/api/docs`                     | Documentación interactiva (Swagger)                                                            |
+| GET    | `/api/docs.json`                | Documento OpenAPI en JSON                                                                      |
+| GET    | `/api/road-segments`            | Todas las calles como GeoJSON, con el color de cada tramo (ver `docs/API-MAPA.md`)             |
+| GET    | `/api/potholes`                 | Los baches como GeoJSON; `?includeRepaired=true` incluye los reparados                         |
+| GET    | `/api/road-network/stats`       | Totales y leyenda del mapa                                                                     |
+| POST   | `/api/routes`                   | Ruta entre dos puntos del mapa, lista para dibujar (ver "Rutas" más abajo)                     |
+| POST   | `/api/auth/google`              | Ingreso con Google: recibe el token de Google y entrega una sesión (ver "Ingreso")             |
+| GET    | `/api/auth/me`                  | Quién es la persona de la sesión, con sus roles y permisos (necesita sesión)                   |
+| POST   | `/api/auth/logout`              | Cierra la sesión que hace la petición, y solo esa (necesita sesión; responde 204)              |
+| POST   | `/api/trips`                    | Abre un viaje y entrega las reglas de las detecciones (permiso `detections.create`)            |
+| PATCH  | `/api/trips/:id`                | Cierra un viaje con sus cuadros y su distancia (permiso `detections.create`)                   |
+| GET    | `/api/trips`                    | Los viajes de la persona, página por página (permiso `trips.view_own`)                         |
+| GET    | `/api/trips/:id`                | Un viaje de la persona, con sus detecciones por severidad (permiso `trips.view_own`)           |
+| POST   | `/api/trips/:tripId/detections` | Un lote de hasta 100 detecciones; se puede reenviar sin duplicar (permiso `detections.create`) |
 
 Los errores siempre responden en JSON con la forma `{ "error": { "code", "message" } }`, y algunos agregan `details` con datos para el frontend.
 
@@ -169,6 +175,17 @@ Con el `token` en `Authorization: Bearer <token>`:
 - Una ruta que exige un permiso usa `requirePermission('codigo')`: **401** sin sesión y **403** `FORBIDDEN` con sesión pero sin el permiso.
 - Un cuerpo de más de 100 KB responde **413** `PAYLOAD_TOO_LARGE`.
 
+### Viajes y detecciones (para el frontend)
+
+El teléfono abre un viaje, manda lotes de detecciones mientras maneja y lo cierra. Todo necesita sesión y el permiso del rol `colaborador`. Lo esencial:
+
+- **Empezar:** `POST /api/trips` con `{ device: { platform, browser?, label? }, modelVersion }`. Responde 201 con el `tripId`, el modelo y las reglas (`minConfidence`, `maxGpsAccuracyM`, `maxBatchSize`). Si `modelVersion` no es la del modelo activo, 409 `MODEL_VERSION_MISMATCH`.
+- **Detecciones:** el teléfono pone un `id` (UUID) a cada una y **no manda la severidad**: el servidor la calcula con el área de la caja (menos de 1 % `leve`, hasta 4 % `moderado`, desde 4 % `grave`). Las malas no dan error: vuelven en `rejected` con su motivo. Reenviar un lote no duplica nada.
+- **Cerrar:** `PATCH /api/trips/:id`. Se aceptan detecciones tardías hasta 24 horas después.
+- **Límites:** 20 peticiones de viajes y 60 lotes por minuto y dirección IP.
+
+El detalle, con ejemplos y todos los errores, está en `docs/API-VIAJES.md`. Antes de desplegar hay que correr `database/09_detections_base.sql` en la base (es idempotente).
+
 ### Endpoint interno
 
 Solo lo usa el servicio de IA para calcular rutas. No está en la lista de `GET /` y necesita el encabezado `Authorization: Bearer <INTERNAL_TOKEN>`.
@@ -178,7 +195,8 @@ Solo lo usa el servicio de IA para calcular rutas. No está en la lista de `GET 
 | GET    | `/internal/graph` | Red vial como grafo: la `version`, los nodos que usa algún tramo y todos los tramos, ordenados por `id` |
 
 - **Sin `INTERNAL_TOKEN` configurado** responde 404, igual que una ruta que no existe. **Con un token ausente o incorrecto** responde 401, siempre con el mismo mensaje. Si la base de datos no responde, 503.
-- **`version`** es un MD5 de los datos que usa el grafo (ids, extremos, longitud, daño, sentido y coordenadas). Cambia si y solo si cambian esos datos; un cambio de geometría o de severidad no la cambia.
+- **`version`** es un MD5 de los datos que usa el grafo (ids, extremos, longitud, daño, sentido, coordenadas y forma de cada tramo). Cambia si y solo si cambian esos datos; un cambio de severidad no la cambia.
+- **`geometry`** de cada tramo son los puntos `[latitud, longitud]` con que se dibuja la calle, de `fromNodeId` a `toNodeId`: la IA ubica una detección sobre la curva real.
 - **Una sola foto de la base:** la versión, los nodos y los tramos se leen en una transacción de solo lectura `REPEATABLE READ`, así que una importación o una actualización de daño en paralelo no deja tramos apuntando a nodos que no están en la lista.
 - **`Cache-Control: no-store`**, y se comprime cuando el cliente lo acepta: con la red de Pasto son unos 1,4 MB de JSON y unos 200 KB por la red.
 
