@@ -4,7 +4,7 @@ Este documento explica cómo el teléfono le entrega al backend los baches que v
 
 ## El recorrido
 
-1. La persona entra con Google y recibe un `token` (ver `docs/AUTENTICACION.md`). Para grabar necesita el permiso `detections.create` (rol `colaborador`); para ver sus viajes, `trips.view_own`.
+1. La persona entra con Google y recibe un `token` (ver `docs/AUTENTICACION.md`). Para grabar necesita el permiso `detections.create` (lo trae todo rol, desde `usuario`; la migración 11 lo da); para ver sus viajes, `trips.view_own`.
 2. **Empieza el viaje:** `POST /api/trips` con el teléfono y la versión del modelo. El backend contesta con el `tripId` y con **las reglas** con que se juzgarán las detecciones (confianza mínima, precisión GPS máxima, tamaño del lote).
 3. **Manda detecciones** en lotes: `POST /api/trips/:tripId/detections`, hasta 100 por lote.
 4. **Cierra el viaje:** `PATCH /api/trips/:id` con los cuadros analizados y la distancia.

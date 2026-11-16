@@ -81,7 +81,7 @@ export const authSchemas = {
         items: { type: 'string', example: 'detections.create' },
         description:
           'The codes of the permissions that their roles give, in alphabetical order. ' +
-          'A person with only "usuario" has none. They are read at every request, so a role ' +
+          'A person with only "usuario" has detections.create and trips.view_own. They are read at every request, so a role ' +
           'that was just given or taken away shows here at once.',
         example: ['detections.create', 'routes.view_history'],
       },

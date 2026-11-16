@@ -100,7 +100,7 @@ No se registran los 400, los 429, `AUTH_NOT_CONFIGURED` ni la base caída. Ningu
 
 ### `GET /api/auth/me`
 
-Necesita sesión. Responde 200 con `{ "user": { id, email, fullName, avatarUrl, roles, permissions } }`: lo mismo que el ingreso más los **permisos** que dan sus roles (códigos como `detections.create`, en orden alfabético; quien solo tiene `usuario` no tiene ninguno). Los roles y los permisos se leen en cada petición, sin guardarlos en la sesión, así que un rol dado o quitado se nota en la siguiente petición. Lleva `Cache-Control: no-store`.
+Necesita sesión. Responde 200 con `{ "user": { id, email, fullName, avatarUrl, roles, permissions } }`: lo mismo que el ingreso más los **permisos** que dan sus roles (códigos como `detections.create`, en orden alfabético; quien solo tiene `usuario` trae `detections.create` y `trips.view_own`). Los roles y los permisos se leen en cada petición, sin guardarlos en la sesión, así que un rol dado o quitado se nota en la siguiente petición. Lleva `Cache-Control: no-store`.
 
 - **401** (siempre el mismo cuerpo): sin sesión, o sesión desconocida, vencida, cerrada o de una cuenta desactivada.
 - **503** `DATABASE_UNAVAILABLE`: la base no responde. Nunca es un 401.
@@ -113,7 +113,7 @@ Necesita sesión y no lleva cuerpo. Cierra **solo la sesión que hace la petici�
 
 | Rol             | Permisos                                                                               |
 | --------------- | -------------------------------------------------------------------------------------- |
-| `usuario`       | ninguno: es la base, la tiene toda cuenta                                              |
+| `usuario`       | `detections.create`, `trips.view_own`: es la base, la tiene toda cuenta y ya guarda    |
 | `colaborador`   | `detections.create`, `potholes.report_repair`, `routes.view_history`, `trips.view_own` |
 | `administrador` | los nueve, incluido `users.manage`                                                     |
 
