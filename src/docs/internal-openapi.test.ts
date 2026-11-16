@@ -42,7 +42,14 @@ describe('internal OpenAPI description', () => {
       'lengthM',
       'damageScore',
       'isOneway',
+      'geometry',
     ]);
+  });
+
+  it('says the shape is a list of [latitude, longitude] pairs, at least two', () => {
+    const geometry = internalSchemas.GraphSegment.properties.geometry;
+    expect(geometry.minItems).toBe(2);
+    expect(geometry.items).toMatchObject({ minItems: 2, maxItems: 2 });
   });
 
   it('only references schemas that exist', () => {

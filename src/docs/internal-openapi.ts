@@ -53,8 +53,21 @@ export const internalSchemas = {
         type: 'boolean',
         description: 'When true, traffic only goes from fromNodeId to toNodeId.',
       },
+      geometry: {
+        type: 'array',
+        minItems: 2,
+        description:
+          'The drawn shape of the segment, from fromNodeId to toNodeId, as [latitude, longitude] ' +
+          'points. The AI service uses it to place a detection on the curve of a street and not ' +
+          'only on the straight line between its ends.',
+        items: { type: 'array', minItems: 2, maxItems: 2, items: { type: 'number' } },
+        example: [
+          [1.2136, -77.2811],
+          [1.2141, -77.2806],
+        ],
+      },
     },
-    required: ['id', 'fromNodeId', 'toNodeId', 'lengthM', 'damageScore', 'isOneway'],
+    required: ['id', 'fromNodeId', 'toNodeId', 'lengthM', 'damageScore', 'isOneway', 'geometry'],
   },
   RoadGraph: {
     type: 'object',
@@ -66,7 +79,7 @@ export const internalSchemas = {
         type: 'string',
         example: '940ab0350236d4a94de0b11d6ed78931',
         description:
-          'MD5 of the nodes and segments sent. It changes if and only if the graph data changes.',
+          'MD5 of the nodes and segments sent, shapes included. It changes if and only if the graph data changes.',
       },
       nodes: { type: 'array', items: { $ref: '#/components/schemas/GraphNode' } },
       segments: { type: 'array', items: { $ref: '#/components/schemas/GraphSegment' } },
