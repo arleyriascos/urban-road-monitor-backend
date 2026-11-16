@@ -1,0 +1,77 @@
+import { prisma } from '../config/database.js';
+import type { PrismaClient } from '../generated/prisma/client.js';
+import { isUuid } from '../trips/uuid.js';
+
+/** A trip: from the moment the camera starts until it stops. */
+export interface TripRecord {
+  id: string;
+  userId: string;
+  deviceId: string;
+  aiModelId: number;
+  startedAt: Date;
+  endedAt: Date | null;
+  framesAnalyzed: number;
+  distanceM: number;
+}
+
+export interface NewTrip {
+  userId: string;
+  deviceId: string;
+  aiModelId: number;
+  startedAt: Date;
+}
+
+interface TripRow {
+  id: string;
+  user_id: string;
+  device_id: string;
+  ai_model_id: number;
+  started_at: Date;
+  ended_at: Date | null;
+  frames_analyzed: number;
+  distance_m: { toString(): string } | number;
+}
+
+export function toTripRecord(row: TripRow): TripRecord {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    deviceId: row.device_id,
+    aiModelId: row.ai_model_id,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    framesAnalyzed: row.frames_analyzed,
+    distanceM: Number(row.distance_m),
+  };
+}
+
+/** Reads and writes the trips table. Every time comes from the caller, never from NOW(). */
+export class TripRepository {
+  constructor(private readonly db: PrismaClient = prisma) {}
+
+  async create(trip: NewTrip): Promise<TripRecord> {
+    const row = await this.db.trips.create({
+      data: {
+        user_id: trip.userId,
+        device_id: trip.deviceId,
+        ai_model_id: trip.aiModelId,
+        started_at: trip.startedAt,
+      },
+    });
+    return toTripRecord(row);
+  }
+
+  /**
+   * A trip of this person, or null. A trip of someone else and a trip that does not exist look
+   * the same, so nobody can find out which trip ids exist.
+   */
+  async findOwned(userId: string, tripId: string): Promise<TripRecord | null> {
+    if (!isUuid(tripId)) {
+      return null;
+    }
+    const row = await this.db.trips.findFirst({ where: { id: tripId, user_id: userId } });
+    return row ? toTripRecord(row) : null;
+  }
+}
+
+export const tripRepository = new TripRepository();
