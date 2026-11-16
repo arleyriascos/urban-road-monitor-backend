@@ -1,3 +1,4 @@
+import { clusteringPaths, clusteringSchemas, clusteringTags } from './clustering-openapi.js';
 import { detectionPaths, detectionSchemas } from './detections-openapi.js';
 import { tripPaths, tripSchemas, tripTags } from './trips-openapi.js';
 import { authPaths, authSchemas, authSecuritySchemes, authTags } from './auth-openapi.js';
@@ -44,6 +45,7 @@ export const openApiDocument = {
     ...routeTags,
     ...authTags,
     ...tripTags,
+    ...clusteringTags,
     ...internalTags,
   ],
   paths: {
@@ -52,6 +54,7 @@ export const openApiDocument = {
     ...authPaths,
     ...tripPaths,
     ...detectionPaths,
+    ...clusteringPaths,
     ...internalPaths,
     '/api/health': {
       get: {
@@ -100,6 +103,7 @@ export const openApiDocument = {
       ...authSchemas,
       ...tripSchemas,
       ...detectionSchemas,
+      ...clusteringSchemas,
       ...internalSchemas,
       Error: errorSchema,
       HealthReport: {
