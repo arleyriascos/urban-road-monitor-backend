@@ -1,3 +1,4 @@
+import { detectionPaths, detectionSchemas } from './detections-openapi.js';
 import { tripPaths, tripSchemas, tripTags } from './trips-openapi.js';
 import { authPaths, authSchemas, authSecuritySchemes, authTags } from './auth-openapi.js';
 import {
@@ -50,6 +51,7 @@ export const openApiDocument = {
     ...routePaths,
     ...authPaths,
     ...tripPaths,
+    ...detectionPaths,
     ...internalPaths,
     '/api/health': {
       get: {
@@ -97,6 +99,7 @@ export const openApiDocument = {
       ...routeSchemas,
       ...authSchemas,
       ...tripSchemas,
+      ...detectionSchemas,
       ...internalSchemas,
       Error: errorSchema,
       HealthReport: {

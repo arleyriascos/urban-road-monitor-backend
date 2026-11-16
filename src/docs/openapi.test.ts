@@ -15,6 +15,7 @@ describe('openApiDocument', () => {
       '/api/routes',
       '/api/trips',
       '/api/trips/{id}',
+      '/api/trips/{tripId}/detections',
       '/internal/graph',
     ]);
   });
