@@ -136,6 +136,13 @@ export class RoadIndex {
     return position === undefined || position < 0 ? undefined : position;
   }
 
+  /** The segment_index of a segment (its place in its street as OpenStreetMap numbered it). */
+  segmentIndexOf(segmentId: number): number | undefined {
+    const roadId = this.roadOfSegment.get(segmentId);
+    const road = roadId === undefined ? undefined : this.roads.get(roadId);
+    return road?.facts.find((item) => item.segmentId === segmentId)?.segmentIndex;
+  }
+
   private stretchAt(road: RoadEntry, from: number, to: number): RoadStretch {
     const empty = from >= to;
     return {

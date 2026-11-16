@@ -108,6 +108,12 @@ describe('RoadIndex', () => {
     expect(roads.roadCount).toBe(2);
   });
 
+  it('knows the segment_index of a segment', () => {
+    const roads = index(street(1, 'Calle 1', 3, {}, 10));
+    expect(roads.segmentIndexOf(1002)).toBe(12);
+    expect(roads.segmentIndexOf(555)).toBeUndefined();
+  });
+
   it('says nothing about a street or a segment it does not know', () => {
     const roads = index(street(1, 'Calle 1', 3));
     expect(roads.road(9)).toBeUndefined();
