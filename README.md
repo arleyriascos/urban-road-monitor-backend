@@ -182,7 +182,7 @@ Con el `token` en `Authorization: Bearer <token>`:
 
 ### Viajes y detecciones (para el frontend)
 
-El teléfono abre un viaje, manda lotes de detecciones mientras maneja y lo cierra. Todo necesita sesión y el permiso del rol `colaborador`. Lo esencial:
+El teléfono abre un viaje, manda lotes de detecciones mientras maneja y lo cierra. Todo necesita sesión, pero basta con una cuenta normal (rol `usuario`): cualquier persona que entre con Google puede guardar baches; un invitado sin cuenta no. Lo esencial:
 
 - **Empezar:** `POST /api/trips` con `{ device: { platform, browser?, label? }, modelVersion }`. Responde 201 con el `tripId`, el modelo y las reglas (`minConfidence`, `maxGpsAccuracyM`, `maxBatchSize`). Si `modelVersion` no es la del modelo activo, 409 `MODEL_VERSION_MISMATCH`.
 - **Detecciones:** el teléfono pone un `id` (UUID) a cada una y **no manda la severidad**: el servidor la calcula con el área de la caja (menos de 1 % `leve`, hasta 4 % `moderado`, desde 4 % `grave`). Las malas no dan error: vuelven en `rejected` con su motivo. Reenviar un lote no duplica nada.
@@ -282,7 +282,7 @@ src/
 Para activarlas, una sola vez en tu computador:
 
 1. Crea una base vacía llamada `urban_road_monitor_test` (en pgAdmin, o con `psql -U postgres -c "CREATE DATABASE urban_road_monitor_test"`).
-2. Ejecútale, conectado como dueño de la base, en este orden: `database/00_run_all.sql`, `06_add_segment_geometry.sql`, `07_add_geometry_to_segment_status_view.sql`, `08_auth_base.sql`, `09_detections_base.sql` y `10_consolidation_base.sql`. No hace falta `05_app_user.sql`.
+2. Ejecútale, conectado como dueño de la base, en este orden: `database/00_run_all.sql`, `06_add_segment_geometry.sql`, `07_add_geometry_to_segment_status_view.sql`, `08_auth_base.sql`, `09_detections_base.sql`, `10_consolidation_base.sql` y `11_usuario_can_record.sql`. No hace falta `05_app_user.sql`.
 3. Agrega a tu `.env`: `TEST_DATABASE_URL=postgresql://postgres:TU_CONTRASEÑA@localhost:5432/urban_road_monitor_test`.
 
 Protecciones: estas pruebas vacían tablas, así que solo aceptan una base en `localhost` cuyo nombre termine en `_test`. Una dirección de Neon o de otra base se rechaza antes de conectar. Solo `TEST_DATABASE_URL` se lee del `.env` para las pruebas; el `DATABASE_URL` real nunca llega a ellas.
