@@ -37,6 +37,11 @@ export function createApp() {
         'POST /api/auth/google',
         'GET /api/auth/me',
         'POST /api/auth/logout',
+        'POST /api/trips',
+        'PATCH /api/trips/:id',
+        'GET /api/trips',
+        'GET /api/trips/:id',
+        'POST /api/trips/:tripId/detections',
       ],
     });
   });
