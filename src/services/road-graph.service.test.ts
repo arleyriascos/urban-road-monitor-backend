@@ -13,7 +13,18 @@ const snapshot: RoadGraphSnapshot = {
     { id: 12, latitude: 1.2141, longitude: -77.28 },
   ],
   segments: [
-    { id: 7, fromNodeId: 11, toNodeId: 12, lengthM: 112, damageScore: 2, isOneway: false },
+    {
+      id: 7,
+      fromNodeId: 11,
+      toNodeId: 12,
+      lengthM: 112,
+      damageScore: 2,
+      isOneway: false,
+      geometry: [
+        [1.214, -77.281],
+        [1.2141, -77.28],
+      ],
+    },
   ],
 };
 

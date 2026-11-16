@@ -1,5 +1,5 @@
 import { prisma } from '../config/database.js';
-import { Prisma } from '../generated/prisma/client.js';
+import { Prisma, type PrismaClient } from '../generated/prisma/client.js';
 
 /** An intersection of the road graph, as the AI service needs it. */
 export interface GraphNodeRow {
@@ -16,6 +16,8 @@ export interface GraphSegmentRow {
   lengthM: number;
   damageScore: number;
   isOneway: boolean;
+  /** The drawn shape of the segment, as [latitude, longitude] points from end to end. */
+  geometry: [number, number][];
 }
 
 /** The whole road graph read from one consistent view of the database. */
@@ -41,6 +43,7 @@ interface RawSegmentRow {
   length_m: number;
   damage_score: number;
   is_oneway: boolean;
+  geometry: [number, number][];
 }
 
 const SNAPSHOT_TIMEOUT_MS = 20_000;
@@ -71,13 +74,15 @@ const GRAPH_VERSION_SQL = Prisma.sql`
 
 /** Reads the road graph for the AI service. It only reads: it never changes the database. */
 export class RoadGraphRepository {
+  constructor(private readonly db: PrismaClient = prisma) {}
+
   /**
    * Version, nodes and segments in one read-only REPEATABLE READ transaction, so the three
    * come from the same view of the database even if an import or a damage update runs
    * at the same time. Without it a segment could point to a node missing from the list.
    */
   async getSnapshot(): Promise<RoadGraphSnapshot> {
-    return prisma.$transaction(
+    return this.db.$transaction(
       async (tx) => {
         await tx.$executeRaw`SET TRANSACTION READ ONLY`;
         const [versionRow] = await tx.$queryRaw<{ version: string }[]>(GRAPH_VERSION_SQL);
@@ -90,7 +95,8 @@ export class RoadGraphRepository {
           ORDER BY n.id`;
         const segments = await tx.$queryRaw<RawSegmentRow[]>`
           SELECT id, from_node_id, to_node_id,
-                 length_m::float8 AS length_m, damage_score::float8 AS damage_score, is_oneway
+                 length_m::float8 AS length_m, damage_score::float8 AS damage_score, is_oneway,
+                 geometry
           FROM road_segments
           ORDER BY id`;
 
@@ -108,6 +114,7 @@ export class RoadGraphRepository {
             lengthM: row.length_m,
             damageScore: row.damage_score,
             isOneway: row.is_oneway,
+            geometry: row.geometry,
           })),
         };
       },
@@ -121,7 +128,7 @@ export class RoadGraphRepository {
 
   /** Only the version, in a single statement (one statement always sees one view). */
   async getVersion(): Promise<string> {
-    const [row] = await prisma.$queryRaw<{ version: string }[]>(GRAPH_VERSION_SQL);
+    const [row] = await this.db.$queryRaw<{ version: string }[]>(GRAPH_VERSION_SQL);
     return row.version;
   }
 }

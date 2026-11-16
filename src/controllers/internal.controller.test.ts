@@ -25,6 +25,10 @@ const graph: RoadGraph = {
     lengthM: 11.12,
     damageScore: i % 10 === 0 ? 0.5 : 0,
     isOneway: i % 3 === 0,
+    geometry: [
+      [1.2136, -77.2811],
+      [1.2137, -77.281],
+    ] as [number, number][],
   })),
 };
 
