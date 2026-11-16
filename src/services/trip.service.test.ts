@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../errors/app-error.js';
-import type { TripRecord } from '../repositories/trip.repository.js';
+import type { TripRecord, TripSummary } from '../repositories/trip.repository.js';
 import { DEFAULT_MAX_GPS_ACCURACY_M, TripService } from './trip.service.js';
 
 const NOW = new Date('2026-11-16T12:00:00Z');
@@ -36,6 +36,13 @@ function setup(overrides: { model?: typeof MODEL | null; accuracy?: number } = {
       const record = stored.get(tripId);
       return record && record.userId === userId ? record : null;
     }),
+    listByUser: vi.fn(
+      async (
+        _userId: string,
+        _limit: number,
+        _after: { startedAt: Date; id: string } | null,
+      ): Promise<TripSummary[]> => [],
+    ),
     finish: vi.fn(
       async (
         userId: string,
@@ -243,5 +250,84 @@ describe('TripService.finish', () => {
     const closed = await ctx.service.finish('user-1', tripId, END);
 
     expect(closed).toMatchObject({ framesAnalyzed: 50, distanceM: 500 });
+  });
+});
+
+function summary(n: number): TripSummary {
+  return {
+    id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
+    startedAt: new Date(NOW.getTime() - n * 60_000),
+    endedAt: null,
+    framesAnalyzed: 0,
+    distanceM: 0,
+    detectionCount: n,
+    platform: 'android',
+    deviceLabel: null,
+    modelVersion: '1.0.0',
+  };
+}
+
+describe('TripService.list', () => {
+  it('answers a page and no cursor when everything fits', async () => {
+    const ctx = setup();
+    ctx.trips.listByUser.mockResolvedValue([summary(1), summary(2)]);
+
+    const page = await ctx.service.list('user-1', 5, undefined);
+
+    expect(page.trips).toHaveLength(2);
+    expect(page.nextCursor).toBeNull();
+    expect(ctx.trips.listByUser).toHaveBeenCalledWith('user-1', 6, null);
+  });
+
+  it('asks for one more trip than the page and answers a cursor that points after the last', async () => {
+    const ctx = setup();
+    ctx.trips.listByUser.mockResolvedValue([summary(1), summary(2), summary(3)]);
+
+    const page = await ctx.service.list('user-1', 2, undefined);
+
+    expect(page.trips.map((trip) => trip.detectionCount)).toEqual([1, 2]);
+    expect(page.nextCursor).not.toBeNull();
+
+    await ctx.service.list('user-1', 2, page.nextCursor ?? undefined);
+    const [, , cursor] = ctx.trips.listByUser.mock.calls[1]!;
+    expect(cursor).toEqual({ startedAt: summary(2).startedAt, id: summary(2).id });
+  });
+
+  it('refuses a cursor it did not make', async () => {
+    const ctx = setup();
+
+    await expect(ctx.service.list('user-1', 5, 'made-up')).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'INVALID_CURSOR',
+    });
+    expect(ctx.trips.listByUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('TripService.get', () => {
+  it('answers one trip of the person with its detections', async () => {
+    const ctx = setup();
+    const { tripId } = await ctx.service.start('user-1', {
+      device: { platform: 'ios' },
+      modelVersion: '1.0.0',
+    });
+
+    expect(await ctx.service.get('user-1', tripId)).toMatchObject({
+      id: tripId,
+      detections: { total: 5 },
+    });
+  });
+
+  it('does not answer the trip of someone else', async () => {
+    const ctx = setup();
+    const { tripId } = await ctx.service.start('user-1', {
+      device: { platform: 'ios' },
+      modelVersion: '1.0.0',
+    });
+
+    await expect(ctx.service.get('user-2', tripId)).rejects.toMatchObject({
+      statusCode: 404,
+      code: 'TRIP_NOT_FOUND',
+    });
   });
 });

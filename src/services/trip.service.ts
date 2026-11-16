@@ -15,8 +15,10 @@ import {
   tripRepository,
   type TripRecord,
   type TripRepository,
+  type TripSummary,
 } from '../repositories/trip.repository.js';
 import { MAX_BATCH_SIZE } from '../detections/batch-input.js';
+import { decodeCursor, encodeCursor } from '../trips/cursor.js';
 import { chooseEndedAt, chooseStartedAt } from '../trips/trip-rules.js';
 import type { EndTripInput, StartTripInput } from '../trips/trip-input.js';
 import { orUnavailable } from './database-errors.js';
@@ -43,10 +45,17 @@ export interface TripView {
   detections: TripDetectionCount;
 }
 
+/** One page of the trips of a person. */
+export interface TripPage {
+  trips: TripSummary[];
+  /** Pass it back to read the next page; null when this was the last one. */
+  nextCursor: string | null;
+}
+
 export interface TripServiceDependencies {
   models: Pick<AiModelRepository, 'findActive'>;
   devices: Pick<DeviceRepository, 'findOrCreate'>;
-  trips: Pick<TripRepository, 'create' | 'findOwned' | 'finish'>;
+  trips: Pick<TripRepository, 'create' | 'findOwned' | 'finish' | 'listByUser'>;
   detections: Pick<DetectionRepository, 'countByTrip'>;
   parameters: Pick<ParameterRepository, 'getNumber'>;
   clock: () => Date;
@@ -135,6 +144,36 @@ export class TripService {
         throw tripNotFound();
       }
       return this.view(closed);
+    });
+  }
+
+  /** The trip of the person, with its detections counted by severity. */
+  async get(userId: string, tripId: string): Promise<TripView> {
+    return orUnavailable('Could not read a trip', async () => {
+      const trip = await this.deps.trips.findOwned(userId, tripId);
+      if (!trip) {
+        throw tripNotFound();
+      }
+      return this.view(trip);
+    });
+  }
+
+  /** The trips of the person, newest first, `limit` at a time. */
+  async list(userId: string, limit: number, cursorText: string | undefined): Promise<TripPage> {
+    const cursor = cursorText === undefined ? null : decodeCursor(cursorText);
+    if (cursorText !== undefined && cursor === null) {
+      throw new AppError(400, 'INVALID_CURSOR', 'The cursor is not one this server gave');
+    }
+    return orUnavailable('Could not list the trips', async () => {
+      // One more than asked: if it comes, there is a next page.
+      const rows = await this.deps.trips.listByUser(userId, limit + 1, cursor);
+      const trips = rows.slice(0, limit);
+      const last = trips[trips.length - 1];
+      const hasMore = rows.length > limit && last !== undefined;
+      return {
+        trips,
+        nextCursor: hasMore ? encodeCursor({ startedAt: last.startedAt, id: last.id }) : null,
+      };
     });
   }
 
