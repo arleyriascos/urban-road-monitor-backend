@@ -56,3 +56,5 @@ export class RoadSearchRepository {
     return row?.stamp ?? '';
   }
 }
+
+export const roadSearchRepository = new RoadSearchRepository();
