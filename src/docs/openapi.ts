@@ -9,6 +9,7 @@ import {
   internalTags,
 } from './internal-openapi.js';
 import { mapPaths, mapSchemas, mapTags } from './map-openapi.js';
+import { roadSearchPaths, roadSearchSchemas } from './road-search-openapi.js';
 import { roadSummaryPaths, roadSummarySchemas, roadSummaryTags } from './road-summary-openapi.js';
 import { routePaths, routeSchemas, routeTags } from './route-openapi.js';
 
@@ -52,6 +53,7 @@ export const openApiDocument = {
   ],
   paths: {
     ...mapPaths,
+    ...roadSearchPaths,
     ...roadSummaryPaths,
     ...routePaths,
     ...authPaths,
@@ -102,6 +104,7 @@ export const openApiDocument = {
     securitySchemes: { ...internalSecuritySchemes, ...authSecuritySchemes },
     schemas: {
       ...mapSchemas,
+      ...roadSearchSchemas,
       ...roadSummarySchemas,
       ...routeSchemas,
       ...authSchemas,

@@ -14,6 +14,7 @@ describe('openApiDocument', () => {
       '/api/road-network/stats',
       '/api/road-segments',
       '/api/road-segments/{id}/summary',
+      '/api/roads/search',
       '/api/roads/{id}/summary',
       '/api/routes',
       '/api/trips',
@@ -95,5 +96,12 @@ describe('route documentation', () => {
       properties: Record<string, unknown>;
     };
     expect(health.properties.routeCache).toBeDefined();
+  });
+
+  it('documents the street search with its schemas', () => {
+    expect(openApiDocument.paths['/api/roads/search'].get.tags).toEqual(['Streets']);
+    expect(Object.keys(openApiDocument.components.schemas)).toEqual(
+      expect.arrayContaining(['StreetMatch', 'StreetSearchAnswer', 'RouteStreet']),
+    );
   });
 });
