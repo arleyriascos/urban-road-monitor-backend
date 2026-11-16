@@ -32,6 +32,12 @@ interface TripRow {
   distance_m: { toString(): string } | number;
 }
 
+export interface TripEnd {
+  endedAt: Date;
+  framesAnalyzed: number;
+  distanceM: number;
+}
+
 export function toTripRecord(row: TripRow): TripRecord {
   return {
     id: row.id,
@@ -71,6 +77,26 @@ export class TripRepository {
     }
     const row = await this.db.trips.findFirst({ where: { id: tripId, user_id: userId } });
     return row ? toTripRecord(row) : null;
+  }
+
+  /**
+   * Closes an open trip of this person with its counters. It returns the trip as it is now, or
+   * null if there is nothing to close: the trip is not theirs, does not exist, or was already
+   * closed. A trip is closed only once, so its numbers cannot be rewritten later.
+   */
+  async finish(userId: string, tripId: string, end: TripEnd): Promise<TripRecord | null> {
+    if (!isUuid(tripId)) {
+      return null;
+    }
+    const result = await this.db.trips.updateMany({
+      where: { id: tripId, user_id: userId, ended_at: null },
+      data: {
+        ended_at: end.endedAt,
+        frames_analyzed: end.framesAnalyzed,
+        distance_m: end.distanceM,
+      },
+    });
+    return result.count === 0 ? null : this.findOwned(userId, tripId);
   }
 }
 
