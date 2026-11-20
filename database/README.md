@@ -20,6 +20,7 @@ Base de datos del proyecto **Detección de Baches y Rutas en Vías Urbanas** (Po
 | `10_consolidation_base.sql` | Migración: base de la consolidación de baches de la Etapa 4 (ver más abajo) |
 | `11_usuario_can_record.sql` | Migración: el rol `usuario` (toda cuenta) puede guardar detecciones y ver sus viajes; llega a las cuentas que ya existen. Idempotente |
 | `12_password_accounts.sql` | Migración: base de las cuentas con correo y contraseña propias (ver más abajo) |
+| `13_email_tokens.sql` | Migración: enlaces de un solo uso enviados por correo, para verificar el correo y para elegir una contraseña nueva (ver más abajo) |
 
 ## Cómo ejecutarlo
 
@@ -51,6 +52,7 @@ dañar nada.
 | 10 | La consolidación (agrupar las detecciones en baches) deja registro de cada corrida: `clustering_runs` suma `status` (`running`, `finished` o `failed`), `trigger_kind` (`automatic` o `manual`), quién la pidió, los días leídos, los grupos hallados, los baches quitados y el error si falló. Un índice único parcial (`uq_clustering_one_running`) impide que haya dos corridas a la vez, aunque haya varios servidores. Dos parámetros nuevos: `clustering_window_days` (90, los días de detecciones que lee cada corrida) y `clustering_min_interval_s` (120, la pausa mínima entre dos corridas automáticas). Índice en `detections.received_at`. Se puede ejecutar dos veces sin dañar nada. En Neon `production` se ejecuta **antes** de desplegar el código que la usa |
 | 11 | El rol `usuario` recibe los permisos `detections.create` y `trips.view_own`, así que toda cuenta que ingresa puede guardar detecciones y ver sus viajes; llega también a las cuentas que ya existen. Se puede ejecutar dos veces |
 | 12 | Nueva tabla `password_credentials` (una fila por cuenta que tiene contraseña: guarda solo el hash scrypt, con sus parámetros, nunca la contraseña) y nueva columna `users.email_verified_at` (cuándo la persona demostró que el correo es suyo; las cuentas de Google que ya existen se llenan con su fecha de creación). Se puede ejecutar dos veces sin dañar nada y termina con una consulta de verificación. En Neon `production` se ejecuta **antes** de desplegar el código que la usa |
+| 13 | Nueva tabla `email_tokens`: un enlace de un solo uso por fila, con `purpose` (`verify_email` o `reset_password`), `token_hash` (el SHA-256 del token, único; el token nunca se guarda), `expires_at` y `used_at`. Un índice parcial agiliza buscar los enlaces sin usar de una persona. Se puede ejecutar dos veces sin dañar nada y termina con una consulta de verificación. En Neon `production` se ejecuta **antes** de desplegar el código que la usa |
 
 ## Volver a crear desde cero
 

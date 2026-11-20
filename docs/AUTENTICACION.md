@@ -120,9 +120,29 @@ La segunda forma de ingresar (Fase 2). Las cuentas con contraseña viven en las 
 - **Cambiar la contraseña** exige la actual, cierra todas las demás sesiones de la persona (la que hace la petición sigue abierta) y escribe `password_changed`. Una contraseña actual mala responde 403 y no 401, porque el frontend cierra la sesión con cualquier 401.
 - El correo se normaliza (sin espacios, en minúsculas) igual que con Google.
 
+### Enlaces por correo: verificar el correo y recuperar la contraseña (Fase 3)
+
+Dos usos del mismo mecanismo, con la tabla `email_tokens` (migración 13).
+
+| Ruta                                                     | Quién      | Responde                      | Errores                                                                |
+| -------------------------------------------------------- | ---------- | ----------------------------- | ---------------------------------------------------------------------- |
+| `POST /api/auth/verify-email/send`                       | con sesión | 200 `{ sent: true }`          | 401, 404, 409 `ALREADY_VERIFIED`, 429, 502 `MAIL_FAILED`, 503          |
+| `POST /api/auth/verify-email` `{ token }`                | cualquiera | 200 `{ verified: true }`      | 400 `INVALID_REQUEST` / `INVALID_TOKEN`, 429, 503                      |
+| `POST /api/auth/forgot-password` `{ email }`             | cualquiera | 200 `{ sent: true }`, siempre | 400, 429, 503 `MAIL_NOT_CONFIGURED`                                    |
+| `POST /api/auth/reset-password` `{ token, newPassword }` | cualquiera | 200 `{ reset: true }`         | 400 `INVALID_REQUEST` / `INVALID_TOKEN` / `INVALID_PASSWORD`, 429, 503 |
+
+- **El token.** 32 bytes aleatorios en base64url (43 caracteres). El correo lo trae en la parte del enlace después de `#` (`/verificar#token=...` y `/restablecer#token=...`): el navegador no la envía a ningún servidor, así que no queda en registros de acceso ni en el encabezado Referer. En la base solo está su SHA-256; quien lea la tabla no puede usarlo.
+- **Vence y sirve una vez.** Verificar dura 24 horas y recuperar la contraseña 1 hora. Pedir otro enlace del mismo tipo anula el anterior. Usar el enlace y lo que desbloquea ocurren en **una transacción**, y el enlace se toma con una actualización condicional: dos peticiones con el mismo enlace no pueden ganar las dos.
+- **Un enlace que no sirve responde siempre el mismo 400** `INVALID_TOKEN`, sea desconocido, vencido, usado, de otro tipo o de una cuenta desactivada. El motivo solo va a `auth_logs` (`invalid_token`).
+- **Pedir la recuperación no revela qué correos tienen cuenta.** Responde lo mismo para un correo sin cuenta, una cuenta de solo Google o una desactivada, y el mensaje se envía **después** de responder, así que tampoco lo delata el tiempo. Los límites (5 por dirección IP cada 10 minutos y 3 por correo por hora) cuentan cualquier correo, con cuenta o sin ella.
+- **Elegir la contraseña nueva** reemplaza el hash, **cierra todas las sesiones** de la persona (esta no abre ninguna: después se ingresa), marca el correo como verificado (la persona acaba de leer ese buzón) y anula otros enlaces de recuperación. Una contraseña que rompe una regla responde 400 `INVALID_PASSWORD` y **no gasta el enlace**. Escribe `password_reset`.
+- **Verificar** escribe `email_verified`. Una cuenta sin verificar sigue pudiendo ingresar y usar la app.
+- **El servicio de correo** es Brevo, por su API HTTP (no SMTP: el plan gratuito de Render bloquea esos puertos), con espera máxima de 8 segundos. Necesita `BREVO_API_KEY`, `MAIL_FROM` y `APP_URL` juntas; sin ellas las rutas que envían responden 503 `MAIL_NOT_CONFIGURED`. Si Brevo falla, el error solo dice el estado HTTP: nunca la clave ni lo que contesta Brevo. Con un remitente de Gmail, Gmail y Yahoo pueden mandar los mensajes a spam: Brevo no puede firmarlos con el dominio de Gmail.
+- **Pruebas.** `mailer.test.ts`, `messages.test.ts` y `mail-setup.test.ts` (el servicio de correo con un `fetch` de mentira), `email-token.repository.integration.test.ts`, `email-link.service.test.ts`, `email-link.controller.test.ts`, `email-link-rate-limit.test.ts`, y `email-verification.integration.test.ts` y `password-recovery.integration.test.ts` contra PostgreSQL real, leyendo el enlace del mensaje que envía un `Mailer` de mentira.
+
 ### El correo verificado y Google
 
-`users.email_verified_at` dice si la persona demostró que el correo es suyo. Google lo demuestra en cada ingreso (las cuentas de Google nacen verificadas y las que ya existían se llenaron con la migración 12). Una cuenta hecha con contraseña nace **sin verificar**; la verificación por correo llega en la Fase 3.
+`users.email_verified_at` dice si la persona demostró que el correo es suyo. Google lo demuestra en cada ingreso (las cuentas de Google nacen verificadas y las que ya existían se llenaron con la migración 12). Una cuenta hecha con contraseña nace **sin verificar**; se verifica con el enlace que llega por correo (ver "Enlaces por correo") o al elegir una contraseña nueva con el enlace de recuperación.
 
 Si alguien ingresa con Google con el correo de una cuenta con contraseña:
 

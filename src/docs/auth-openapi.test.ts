@@ -9,12 +9,16 @@ const post = authPaths['/api/auth/google'].post;
 describe('auth documentation', () => {
   it('describes the endpoints of the sign-in under the Auth tag', () => {
     expect(Object.keys(authPaths).sort()).toEqual([
+      '/api/auth/forgot-password',
       '/api/auth/google',
       '/api/auth/login',
       '/api/auth/logout',
       '/api/auth/me',
       '/api/auth/password',
       '/api/auth/register',
+      '/api/auth/reset-password',
+      '/api/auth/verify-email',
+      '/api/auth/verify-email/send',
     ]);
     expect(Object.keys(authPaths['/api/auth/google'])).toEqual(['post']);
     expect(Object.keys(authPaths['/api/auth/me'])).toEqual(['get']);
@@ -159,5 +163,35 @@ describe('auth documentation', () => {
     for (const path of ['/api/auth/register', '/api/auth/login', '/api/auth/password']) {
       expect(Object.keys(openApiDocument.paths)).toContain(path);
     }
+  });
+
+  it('describes the links sent by e-mail: who needs a session, and the answers', () => {
+    expect(authPaths['/api/auth/verify-email/send'].post.security).toEqual([{ sessionToken: [] }]);
+    for (const path of [
+      '/api/auth/verify-email',
+      '/api/auth/forgot-password',
+      '/api/auth/reset-password',
+    ] as const) {
+      expect('security' in authPaths[path].post).toBe(false);
+      expect(authPaths[path].post.tags).toEqual(['Auth']);
+    }
+    expect(Object.keys(authPaths['/api/auth/verify-email/send'].post.responses).sort()).toEqual([
+      '200',
+      '401',
+      '404',
+      '409',
+      '429',
+      '502',
+      '503',
+    ]);
+    expect(Object.keys(authPaths['/api/auth/forgot-password'].post.responses).sort()).toEqual([
+      '200',
+      '400',
+      '429',
+      '503',
+    ]);
+    expect(authSchemas.VerifyEmailRequest.required).toEqual(['token']);
+    expect(authSchemas.ForgotPasswordRequest.required).toEqual(['email']);
+    expect(authSchemas.ResetPasswordRequest.required).toEqual(['token', 'newPassword']);
   });
 });

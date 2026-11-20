@@ -4,7 +4,13 @@ import {
   PASSWORD_CHANGES_PER_MINUTE,
   PASSWORD_LOGIN_ATTEMPTS_PER_EMAIL,
   PASSWORD_LOGIN_ATTEMPTS_PER_MINUTE,
+  PASSWORD_RECOVERY_REQUESTS_PER_10_MINUTES_BY_IP,
+  PASSWORD_RECOVERY_REQUESTS_PER_HOUR_BY_EMAIL,
+  PASSWORD_RESET_ATTEMPTS_PER_MINUTE,
   REGISTER_ATTEMPTS_PER_10_MINUTES,
+  VERIFICATION_ATTEMPTS_PER_MINUTE,
+  VERIFICATION_SENDS_PER_10_MINUTES_BY_IP,
+  VERIFICATION_SENDS_PER_10_MINUTES_BY_USER,
 } from '../middlewares/rate-limit.js';
 
 /**
@@ -139,6 +145,37 @@ export const authSchemas = {
       password: { type: 'string', minLength: 1 },
     },
     required: ['email', 'password'],
+  },
+  VerifyEmailRequest: {
+    type: 'object',
+    properties: {
+      token: {
+        type: 'string',
+        minLength: 1,
+        maxLength: 200,
+        description:
+          'The token of the link: the 43 characters after "#token=" in the e-mailed address.',
+      },
+    },
+    required: ['token'],
+  },
+  ForgotPasswordRequest: {
+    type: 'object',
+    properties: { email: { type: 'string', maxLength: 255, example: 'ana@example.com' } },
+    required: ['email'],
+  },
+  ResetPasswordRequest: {
+    type: 'object',
+    properties: {
+      token: { type: 'string', minLength: 1, maxLength: 200 },
+      newPassword: {
+        type: 'string',
+        minLength: PASSWORD_MIN_LENGTH,
+        maxLength: PASSWORD_MAX_LENGTH,
+        description: 'The same rules as the password of the sign-up.',
+      },
+    },
+    required: ['token', 'newPassword'],
   },
   ChangePasswordRequest: {
     type: 'object',
@@ -283,6 +320,155 @@ export const authPaths = {
         ),
         429: errorResponse(
           `TOO_MANY_REQUESTS: more than ${PASSWORD_CHANGES_PER_MINUTE} attempts in a minute; see Retry-After`,
+        ),
+        503: errorResponse('DATABASE_UNAVAILABLE'),
+      },
+    },
+  },
+  '/api/auth/verify-email/send': {
+    post: {
+      tags: ['Auth'],
+      summary: 'E-mail the person a link that verifies their email',
+      description:
+        'Needs a session. Sends the link to the email of the account; the token it carries ' +
+        'lasts 24 hours, works once and replaces the previous one. The link looks like ' +
+        '<APP_URL>/verificar#token=<token>: the token is after "#" so the browser never sends it ' +
+        'to a server. Answers 503 MAIL_NOT_CONFIGURED while BREVO_API_KEY, MAIL_FROM and APP_URL ' +
+        'are not set.',
+      security: [{ sessionToken: [] }],
+      responses: {
+        200: {
+          description: 'The message was handed to the e-mail service.',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { sent: { type: 'boolean', example: true } },
+                required: ['sent'],
+              },
+            },
+          },
+        },
+        401: errorResponse('UNAUTHORIZED: there is no valid session'),
+        404: errorResponse('ACCOUNT_NOT_FOUND'),
+        409: errorResponse('ALREADY_VERIFIED: the email is already verified'),
+        429: errorResponse(
+          `TOO_MANY_REQUESTS: more than ${VERIFICATION_SENDS_PER_10_MINUTES_BY_IP} per address or ` +
+            `${VERIFICATION_SENDS_PER_10_MINUTES_BY_USER} per person in 10 minutes; see Retry-After`,
+        ),
+        502: errorResponse('MAIL_FAILED: the e-mail service did not accept the message'),
+        503: errorResponse('MAIL_NOT_CONFIGURED or DATABASE_UNAVAILABLE'),
+      },
+    },
+  },
+  '/api/auth/verify-email': {
+    post: {
+      tags: ['Auth'],
+      summary: 'Use the link that verifies an email',
+      description:
+        'Needs no session, because the link may be opened on another device. A token that is ' +
+        'unknown, expired or already used answers the same 400.',
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': { schema: { $ref: '#/components/schemas/VerifyEmailRequest' } },
+        },
+      },
+      responses: {
+        200: {
+          description: 'The email is verified.',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { verified: { type: 'boolean', example: true } },
+                required: ['verified'],
+              },
+            },
+          },
+        },
+        400: errorResponse(
+          'INVALID_REQUEST or INVALID_TOKEN: the link is not valid or has expired',
+        ),
+        429: errorResponse(
+          `TOO_MANY_REQUESTS: more than ${VERIFICATION_ATTEMPTS_PER_MINUTE} attempts per minute; see Retry-After`,
+        ),
+        503: errorResponse('DATABASE_UNAVAILABLE'),
+      },
+    },
+  },
+  '/api/auth/forgot-password': {
+    post: {
+      tags: ['Auth'],
+      summary: 'Ask for an e-mail to choose a new password',
+      description:
+        'Needs no session. It answers the same 200 whether or not the email has an account, and ' +
+        'the message is sent after the answer, so neither the text nor the time tells. Only an ' +
+        'active account with a password gets a message; the link lasts 1 hour, works once and ' +
+        'replaces the previous one. Answers 503 MAIL_NOT_CONFIGURED for any email while the ' +
+        'e-mail service is not set.',
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': { schema: { $ref: '#/components/schemas/ForgotPasswordRequest' } },
+        },
+      },
+      responses: {
+        200: {
+          description: 'Always the same. Sent with "Cache-Control: no-store".',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { sent: { type: 'boolean', example: true } },
+                required: ['sent'],
+              },
+            },
+          },
+        },
+        400: errorResponse('INVALID_REQUEST: the body is not valid'),
+        429: errorResponse(
+          `TOO_MANY_REQUESTS: more than ${PASSWORD_RECOVERY_REQUESTS_PER_10_MINUTES_BY_IP} per address in 10 minutes or ` +
+            `${PASSWORD_RECOVERY_REQUESTS_PER_HOUR_BY_EMAIL} per email in an hour; see Retry-After`,
+        ),
+        503: errorResponse('MAIL_NOT_CONFIGURED or DATABASE_UNAVAILABLE'),
+      },
+    },
+  },
+  '/api/auth/reset-password': {
+    post: {
+      tags: ['Auth'],
+      summary: 'Choose a new password with the link of the e-mail',
+      description:
+        'Needs no session. Replaces the password, closes EVERY session of the person, marks the ' +
+        'email as verified (they just read that inbox) and cancels any other recovery link. It ' +
+        'signs nobody in: the person signs in afterwards. A password that breaks a rule answers ' +
+        '400 INVALID_PASSWORD and does not spend the link.',
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': { schema: { $ref: '#/components/schemas/ResetPasswordRequest' } },
+        },
+      },
+      responses: {
+        200: {
+          description: 'The password was replaced.',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { reset: { type: 'boolean', example: true } },
+                required: ['reset'],
+              },
+            },
+          },
+        },
+        400: errorResponse(
+          'INVALID_REQUEST, INVALID_TOKEN (the link is not valid or has expired) or ' +
+            'INVALID_PASSWORD (details.problem is too_short, too_long, same_as_email or too_common)',
+        ),
+        429: errorResponse(
+          `TOO_MANY_REQUESTS: more than ${PASSWORD_RESET_ATTEMPTS_PER_MINUTE} attempts per minute; see Retry-After`,
         ),
         503: errorResponse('DATABASE_UNAVAILABLE'),
       },

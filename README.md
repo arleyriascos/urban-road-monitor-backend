@@ -32,19 +32,25 @@ npm install
 
 El archivo `.env` está en `.gitignore` y **nunca** se sube a GitHub. Si falta una variable o tiene un formato inválido, el servidor no arranca y muestra cuál es el problema.
 
-| Variable               | Descripción                                                                                                                                     |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NODE_ENV`             | `development`, `production` o `test`                                                                                                            |
-| `PORT`                 | Puerto del servidor (por defecto 3000)                                                                                                          |
-| `DATABASE_URL`         | Conexión a PostgreSQL en Neon con el usuario `app_user`                                                                                         |
-| `CORS_ORIGIN`          | Orígenes del frontend permitidos, separados por comas                                                                                           |
-| `INTERNAL_TOKEN`       | Opcional. Token compartido con el servicio de IA (mínimo 32 caracteres); vacío apaga `/internal/*`                                              |
-| `AI_SERVICE_URL`       | Opcional. Dirección del servicio de IA que calcula las rutas; en producción debe empezar por `https://`                                         |
-| `GOOGLE_CLIENT_ID`     | Opcional. ID de cliente de la app de Google que da el ingreso (termina en `.apps.googleusercontent.com`); vacío apaga el ingreso con Google     |
-| `ROUTE_CACHE_CAPACITY` | Opcional. Cuántas rutas guarda la caché LRU (por defecto 200, entre 1 y 10.000)                                                                 |
-| `TEST_DATABASE_URL`    | Opcional. Solo para las pruebas con PostgreSQL real: una base en tu computador cuyo nombre termina en `_test` (ver "Pruebas con base de datos") |
+| Variable               | Descripción                                                                                                                                       |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`             | `development`, `production` o `test`                                                                                                              |
+| `PORT`                 | Puerto del servidor (por defecto 3000)                                                                                                            |
+| `DATABASE_URL`         | Conexión a PostgreSQL en Neon con el usuario `app_user`                                                                                           |
+| `CORS_ORIGIN`          | Orígenes del frontend permitidos, separados por comas                                                                                             |
+| `INTERNAL_TOKEN`       | Opcional. Token compartido con el servicio de IA (mínimo 32 caracteres); vacío apaga `/internal/*`                                                |
+| `AI_SERVICE_URL`       | Opcional. Dirección del servicio de IA que calcula las rutas; en producción debe empezar por `https://`                                           |
+| `GOOGLE_CLIENT_ID`     | Opcional. ID de cliente de la app de Google que da el ingreso (termina en `.apps.googleusercontent.com`); vacío apaga el ingreso con Google       |
+| `BREVO_API_KEY`        | Opcional. Clave de la API de Brevo, que envía los correos con enlaces. **Es un secreto**: solo en el panel de Render y en tu `.env`, nunca en Git |
+| `MAIL_FROM`            | Opcional. Remitente de los correos: una dirección verificada en Brevo                                                                             |
+| `MAIL_FROM_NAME`       | Opcional. Nombre del remitente (por defecto `Urban Road Monitor`)                                                                                 |
+| `APP_URL`              | Opcional. Dirección del frontend, sin ruta (en producción empieza por `https://`): a ella llevan los enlaces de los correos                       |
+| `ROUTE_CACHE_CAPACITY` | Opcional. Cuántas rutas guarda la caché LRU (por defecto 200, entre 1 y 10.000)                                                                   |
+| `TEST_DATABASE_URL`    | Opcional. Solo para las pruebas con PostgreSQL real: una base en tu computador cuyo nombre termina en `_test` (ver "Pruebas con base de datos")   |
 
 Sin `AI_SERVICE_URL` o sin `INTERNAL_TOKEN`, `POST /api/routes` responde 503 y el resto de la API funciona igual; el servidor lo avisa al arrancar.
+
+Los correos con enlaces (verificar el correo y recuperar la contraseña) necesitan **las tres juntas**: `BREVO_API_KEY`, `MAIL_FROM` y `APP_URL`. Sin ellas esas rutas responden 503 `MAIL_NOT_CONFIGURED` y el resto de la API funciona igual; el servidor lo avisa al arrancar. Se envían por la API HTTP de Brevo y no por SMTP, porque el plan gratuito de Render bloquea los puertos SMTP.
 
 Sin `GOOGLE_CLIENT_ID`, `POST /api/auth/google` responde 503 `AUTH_NOT_CONFIGURED` y el resto de la API funciona igual; el servidor también lo avisa al arrancar. El ID de cliente es público (el frontend usa el mismo), pero el **secreto del cliente no se usa en este proyecto y nunca se escribe aquí**: el formato del valor se revisa para que no se pegue por error.
 
@@ -178,9 +184,13 @@ El `token` se manda después en cada petición protegida como `Authorization: Be
 
 Las tres rutas están en `docs/AUTENTICACION.md`. En resumen:
 
-- `POST /api/auth/register` con `{ "name", "email", "password" }` responde **201** con lo mismo que el ingreso con Google (`token`, `expiresAt`, `user`). La cuenta nace con el correo **sin verificar** (`emailVerified: false`; el envío del correo de verificación llega con la recuperación de contraseña). Errores: 400 `INVALID_REQUEST`; 400 `INVALID_PASSWORD` con `details.problem` (`too_short`, `too_long`, `same_as_email` o `too_common`); 409 `EMAIL_TAKEN`; 429 (más de 5 registros en 10 minutos por dirección IP).
+- `POST /api/auth/register` con `{ "name", "email", "password" }` responde **201** con lo mismo que el ingreso con Google (`token`, `expiresAt`, `user`). La cuenta nace con el correo **sin verificar** (`emailVerified: false`; se verifica con el enlace que llega por correo, ver más abajo). Errores: 400 `INVALID_REQUEST`; 400 `INVALID_PASSWORD` con `details.problem` (`too_short`, `too_long`, `same_as_email` o `too_common`); 409 `EMAIL_TAKEN`; 429 (más de 5 registros en 10 minutos por dirección IP).
 - `POST /api/auth/login` con `{ "email", "password" }` responde **200** igual. Todo fallo responde el **mismo 401** `INVALID_CREDENTIALS` (correo sin cuenta, contraseña mala, cuenta desactivada o cuenta que solo usa Google) y tarda lo mismo: la respuesta no dice cuál fue. 429 con más de 10 intentos por minuto y dirección IP o más de 10 cada 15 minutos para el mismo correo.
 - `POST /api/auth/password` con `{ "currentPassword", "newPassword" }` (necesita sesión) cambia la contraseña y **cierra las demás sesiones**; la actual sigue abierta. Responde `{ "otherSessionsClosed": n }`. Una contraseña actual mala responde **403** `INVALID_CURRENT_PASSWORD` (no 401, para que el frontend no cierre una sesión buena); una cuenta que solo usa Google responde 409 `NO_PASSWORD_SET`.
+- **Correos con enlace (Fase 3).** Cada enlace lleva un token de un solo uso en la parte después de `#` (el navegador no la envía a ningún servidor); en la base solo se guarda su hash (`email_tokens`, migración 13).
+  - `POST /api/auth/verify-email/send` (con sesión) envía el enlace que verifica el correo; dura 24 horas. `POST /api/auth/verify-email` con `{ "token" }` (sin sesión) lo usa y responde `{ "verified": true }`.
+  - `POST /api/auth/forgot-password` con `{ "email" }` responde **siempre lo mismo** (`{ "sent": true }`), tenga o no cuenta ese correo, y solo envía correo a una cuenta activa con contraseña; el enlace dura 1 hora. `POST /api/auth/reset-password` con `{ "token", "newPassword" }` elige la contraseña nueva, **cierra todas las sesiones**, marca el correo como verificado y no abre sesión.
+  - Un enlace malo, vencido o ya usado responde siempre el mismo 400 `INVALID_TOKEN`. Una contraseña que rompe una regla responde 400 `INVALID_PASSWORD` y **no gasta el enlace**. Sin la configuración del correo, 503 `MAIL_NOT_CONFIGURED`.
 - La contraseña lleva de **10 a 128 caracteres**, sin reglas de letras o símbolos; no puede ser el correo ni una contraseña muy común. Solo se guarda un hash scrypt (`password_credentials`, migración 12).
 - `GET /api/auth/me` suma `hasPassword` y `emailVerified`: el frontend muestra "Cambiar contraseña" solo si `hasPassword`.
 - Si alguien ingresa con Google con el correo de una cuenta con contraseña **sin verificar**, la cuenta pasa a ser la de Google: se borra la contraseña y se cierran sus sesiones. Si el correo ya estaba verificado, se conserva todo y la cuenta queda con las dos formas de ingresar.
@@ -296,7 +306,7 @@ src/
 Para activarlas, una sola vez en tu computador:
 
 1. Crea una base vacía llamada `urban_road_monitor_test` (en pgAdmin, o con `psql -U postgres -c "CREATE DATABASE urban_road_monitor_test"`).
-2. Ejecútale, conectado como dueño de la base, en este orden: `database/00_run_all.sql`, `06_add_segment_geometry.sql`, `07_add_geometry_to_segment_status_view.sql`, `08_auth_base.sql`, `09_detections_base.sql`, `10_consolidation_base.sql`, `11_usuario_can_record.sql` y `12_password_accounts.sql`. No hace falta `05_app_user.sql`.
+2. Ejecútale, conectado como dueño de la base, en este orden: `database/00_run_all.sql`, `06_add_segment_geometry.sql`, `07_add_geometry_to_segment_status_view.sql`, `08_auth_base.sql`, `09_detections_base.sql`, `10_consolidation_base.sql`, `11_usuario_can_record.sql`, `12_password_accounts.sql` y `13_email_tokens.sql`. No hace falta `05_app_user.sql`.
 3. Agrega a tu `.env`: `TEST_DATABASE_URL=postgresql://postgres:TU_CONTRASEÑA@localhost:5432/urban_road_monitor_test`.
 
 Protecciones: estas pruebas vacían tablas, así que solo aceptan una base en `localhost` cuyo nombre termine en `_test`. Una dirección de Neon o de otra base se rechaza antes de conectar. Solo `TEST_DATABASE_URL` se lee del `.env` para las pruebas; el `DATABASE_URL` real nunca llega a ellas.
@@ -317,14 +327,17 @@ El servicio se describe en `render.yaml` (región Virginia, plan gratuito, Node 
 
 Variables que se configuran en el panel de Render (no van en el repositorio):
 
-| Variable               | Valor                                                                                                   |
-| ---------------------- | ------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`         | Conexión de `app_user` a la rama `production` de Neon (en tu computador se usa `development`)           |
-| `CORS_ORIGIN`          | URL del frontend en Vercel                                                                              |
-| `INTERNAL_TOKEN`       | Token compartido con el servicio de IA. Mientras no se configure, `/internal/graph` responde 404        |
-| `AI_SERVICE_URL`       | `https://urban-road-monitor-ai.onrender.com`. Mientras no se configure, `POST /api/routes` responde 503 |
-| `GOOGLE_CLIENT_ID`     | ID de cliente de la app de Google. Mientras no se configure, `POST /api/auth/google` responde 503       |
-| `ROUTE_CACHE_CAPACITY` | Opcional; 200 si no se configura                                                                        |
+| Variable               | Valor                                                                                                           |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`         | Conexión de `app_user` a la rama `production` de Neon (en tu computador se usa `development`)                   |
+| `CORS_ORIGIN`          | URL del frontend en Vercel                                                                                      |
+| `INTERNAL_TOKEN`       | Token compartido con el servicio de IA. Mientras no se configure, `/internal/graph` responde 404                |
+| `AI_SERVICE_URL`       | `https://urban-road-monitor-ai.onrender.com`. Mientras no se configure, `POST /api/routes` responde 503         |
+| `GOOGLE_CLIENT_ID`     | ID de cliente de la app de Google. Mientras no se configure, `POST /api/auth/google` responde 503               |
+| `BREVO_API_KEY`        | Clave de la API de Brevo (secreto). Sin ella, con `MAIL_FROM` y `APP_URL`, los correos de enlaces responden 503 |
+| `MAIL_FROM`            | Remitente verificado en Brevo                                                                                   |
+| `APP_URL`              | `https://urban-road-monitor-frontend.vercel.app`                                                                |
+| `ROUTE_CACHE_CAPACITY` | Opcional; 200 si no se configura                                                                                |
 
 Cada `push` a `main` vuelve a desplegar el servicio si tiene activado Auto-Deploy; si no, se despliega con **Manual Deploy** desde el panel de Render.
 En el plan gratuito el servicio se duerme tras unos minutos sin uso: la primera petición después de eso tarda unos segundos.
