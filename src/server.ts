@@ -3,6 +3,7 @@ import { disconnectDatabase } from './config/database.js';
 import { env } from './config/env.js';
 import { consolidationCoordinator } from './services/consolidation-coordinator.js';
 import { consolidationService } from './services/consolidation.service.js';
+import { emailLinkService } from './services/email-link.service.js';
 import { googleLoginService } from './services/google-login.service.js';
 import { routeService } from './services/route.service.js';
 
@@ -24,6 +25,11 @@ const server = app.listen(env.PORT, () => {
   } else {
     console.warn(
       'Detections are not grouped into potholes: set AI_SERVICE_URL and INTERNAL_TOKEN to enable it',
+    );
+  }
+  if (!emailLinkService.isConfigured) {
+    console.warn(
+      'The e-mail links answer 503: set BREVO_API_KEY, MAIL_FROM and APP_URL to enable them',
     );
   }
   if (!googleLoginService.isConfigured) {

@@ -146,6 +146,39 @@ export const passwordChangeRateLimit = createRateLimit({
   message: (limit) => `Too many password changes: the limit is ${limit} per minute`,
 });
 
+/** Verification e-mails per IP address and 10 minutes (POST /api/auth/verify-email/send). */
+export const VERIFICATION_SENDS_PER_10_MINUTES_BY_IP = 10;
+
+export const verificationSendIpRateLimit = createRateLimit({
+  limit: VERIFICATION_SENDS_PER_10_MINUTES_BY_IP,
+  windowMs: 10 * 60_000,
+  message: (limit) => `Too many verification e-mails: the limit is ${limit} per 10 minutes`,
+});
+
+/**
+ * Verification e-mails per PERSON and 10 minutes. It goes after the session check, so it counts
+ * the account and not the address: nobody can fill an inbox with messages by pressing a button.
+ */
+export const VERIFICATION_SENDS_PER_10_MINUTES_BY_USER = 3;
+
+export const verificationSendUserRateLimit = createRateLimit({
+  limit: VERIFICATION_SENDS_PER_10_MINUTES_BY_USER,
+  windowMs: 10 * 60_000,
+  addressOf: (req) => {
+    const auth = req.res?.locals.auth as { userId?: string } | undefined;
+    return auth?.userId ? `user:${auth.userId}` : clientAddress(req);
+  },
+  message: (limit) => `Too many verification e-mails: the limit is ${limit} per 10 minutes`,
+});
+
+/** Uses of a verification link per IP address and minute (POST /api/auth/verify-email). */
+export const VERIFICATION_ATTEMPTS_PER_MINUTE = 10;
+
+export const verificationRateLimit = createRateLimit({
+  limit: VERIFICATION_ATTEMPTS_PER_MINUTE,
+  message: (limit) => `Too many attempts to verify an email: the limit is ${limit} per minute`,
+});
+
 /** Trip requests per IP address and minute (start, close, list, read). Counted apart from the rest. */
 export const TRIP_REQUESTS_PER_MINUTE = 20;
 
