@@ -225,6 +225,67 @@ describe.skipIf(!url)('UserRepository (real database)', () => {
     });
   });
 
+  describe('an account with a password', () => {
+    const HASH = 'scrypt$16384$8$1$c2FsdA$aGFzaA';
+
+    async function openSession(userId: string) {
+      return db.sessions.create({
+        data: { user_id: userId, token_hash: `hash-${userId}`, expires_at: new Date('2027-01-01') },
+      });
+    }
+
+    it('becomes the Google account when its email was never verified: no password, no old sessions', async () => {
+      const userId = await createTestUser(db, { email: 'ana@example.com', passwordHash: HASH });
+      const session = await openSession(userId);
+
+      const result = signedIn(await repository.signInWithGoogle(signIn()));
+
+      expect(result).toMatchObject({ created: false, linked: true });
+      expect(result.user.id).toBe(userId);
+      expect(await db.password_credentials.count()).toBe(0);
+      const closed = await db.sessions.findUniqueOrThrow({ where: { id: session.id } });
+      expect(closed.revoked_at).toEqual(T0);
+      const user = await db.users.findUniqueOrThrow({ where: { id: userId } });
+      expect(user.email_verified_at).toEqual(T0);
+    });
+
+    it('keeps its password and its sessions when its email was verified', async () => {
+      const userId = await createTestUser(db, {
+        email: 'ana@example.com',
+        passwordHash: HASH,
+        emailVerifiedAt: new Date('2026-11-01T00:00:00Z'),
+      });
+      const session = await openSession(userId);
+
+      const result = signedIn(await repository.signInWithGoogle(signIn()));
+
+      expect(result).toMatchObject({ created: false, linked: true });
+      expect(await db.password_credentials.count()).toBe(1);
+      const open = await db.sessions.findUniqueOrThrow({ where: { id: session.id } });
+      expect(open.revoked_at).toBeNull();
+    });
+  });
+
+  describe('the verified email', () => {
+    it('is set to the sign-in time on a new Google account', async () => {
+      const result = signedIn(await repository.signInWithGoogle(signIn()));
+      const user = await db.users.findUniqueOrThrow({ where: { id: result.user.id } });
+      expect(user.email_verified_at).toEqual(T0);
+    });
+
+    it('is filled in for a Google account that had none, and never moved afterwards', async () => {
+      const first = signedIn(await repository.signInWithGoogle(signIn()));
+      await db.users.update({ where: { id: first.user.id }, data: { email_verified_at: null } });
+      await repository.signInWithGoogle(signIn({ now: LATER }));
+      const filled = await db.users.findUniqueOrThrow({ where: { id: first.user.id } });
+      expect(filled.email_verified_at).toEqual(LATER);
+
+      await repository.signInWithGoogle(signIn({ now: new Date('2026-12-01T00:00:00Z') }));
+      const same = await db.users.findUniqueOrThrow({ where: { id: first.user.id } });
+      expect(same.email_verified_at).toEqual(LATER);
+    });
+  });
+
   describe('a deactivated or deleted account', () => {
     it('is not signed in when it is found by its Google identity, and nothing changes', async () => {
       const first = signedIn(await repository.signInWithGoogle(signIn()));

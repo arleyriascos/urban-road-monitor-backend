@@ -58,7 +58,14 @@ let counter = 0;
 /** Inserts a user and returns its id. The email is unique and in lowercase. */
 export async function createTestUser(
   db: PrismaClient,
-  overrides: { email?: string; isActive?: boolean } = {},
+  overrides: {
+    email?: string;
+    isActive?: boolean;
+    /** Gives the account a password (this stored hash). Without it the account has none. */
+    passwordHash?: string;
+    /** When the email was verified. Without it the email is not verified. */
+    emailVerifiedAt?: Date;
+  } = {},
 ): Promise<string> {
   counter += 1;
   const isActive = overrides.isActive ?? true;
@@ -68,6 +75,10 @@ export async function createTestUser(
       full_name: `Test User ${counter}`,
       is_active: isActive,
       deleted_at: isActive ? null : new Date('2026-01-01T00:00:00Z'),
+      ...(overrides.emailVerifiedAt ? { email_verified_at: overrides.emailVerifiedAt } : {}),
+      ...(overrides.passwordHash
+        ? { password_credentials: { create: { password_hash: overrides.passwordHash } } }
+        : {}),
     },
     select: { id: true },
   });

@@ -49,6 +49,7 @@ const ACCOUNT_FIELDS = {
   avatar_url: true,
   is_active: true,
   deleted_at: true,
+  email_verified_at: true,
 } as const;
 
 interface AccountRow {
@@ -58,6 +59,7 @@ interface AccountRow {
   avatar_url: string | null;
   is_active: boolean;
   deleted_at: Date | null;
+  email_verified_at: Date | null;
 }
 
 /** The role in the migration is missing: the database is not at the version the code expects. */
@@ -87,6 +89,8 @@ function isActive(account: AccountRow): boolean {
  * 3. It is not, and an account has that email: the identity is linked to it, because Google
  *    has verified the email. Unless that account is already linked to ANOTHER Google
  *    identity: then nothing is linked, because the address may have passed to someone else.
+ *    If that account was made with a password and its email was never verified, it becomes
+ *    the Google account: the password is deleted and its sessions are closed.
  *
  * A deactivated or deleted account is never signed in and never linked: it comes back as
  * "inactive" with nothing changed. When it does sign in, the name and photo come from Google
@@ -128,6 +132,7 @@ export class UserRepository {
       where: { email: input.email },
       select: {
         ...ACCOUNT_FIELDS,
+        password_credentials: { select: { user_id: true } },
         oauth_accounts: {
           where: { provider: GOOGLE },
           take: 1,
@@ -151,6 +156,16 @@ export class UserRepository {
       await tx.oauth_accounts.create({
         data: { user_id: sameEmail.id, provider: GOOGLE, provider_account_id: input.subject },
       });
+      if (sameEmail.password_credentials && !sameEmail.email_verified_at) {
+        // A password account whose email nobody verified: whoever made it may not own that
+        // address, and Google just proved the person in front of us does. The account becomes
+        // Google's: the password is deleted and the sessions opened with it are closed.
+        await tx.password_credentials.delete({ where: { user_id: sameEmail.id } });
+        await tx.sessions.updateMany({
+          where: { user_id: sameEmail.id, revoked_at: null },
+          data: { revoked_at: input.now },
+        });
+      }
       return this.enter(tx, sameEmail, input, { created: false, linked: true });
     }
 
@@ -173,6 +188,8 @@ export class UserRepository {
       data: {
         last_login_at: input.now,
         avatar_url: update.avatarUrl,
+        // Google verifies the email at every sign-in.
+        ...(account.email_verified_at ? {} : { email_verified_at: input.now }),
         ...(update.fullName === undefined ? {} : { full_name: update.fullName }),
       },
       select: ACCOUNT_FIELDS,
@@ -194,6 +211,7 @@ export class UserRepository {
         full_name: nameForNewAccount(input.name, input.email),
         avatar_url: profileUpdateFrom(input.name, input.picture).avatarUrl,
         last_login_at: input.now,
+        email_verified_at: input.now,
         oauth_accounts: { create: { provider: GOOGLE, provider_account_id: input.subject } },
         user_roles: { create: { role_id: role.id } },
       },
