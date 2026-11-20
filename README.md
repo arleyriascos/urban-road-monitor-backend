@@ -91,6 +91,9 @@ El mismo valor va en el backend y en el servicio de IA. Nunca se escribe en `.en
 | GET    | `/api/roads/:id/summary`         | Resumen de una calle, o de la parte entre `from` y `to` (ver `docs/API-CALLES.md`)                    |
 | POST   | `/api/routes`                    | Ruta entre dos puntos del mapa, lista para dibujar (ver "Rutas" más abajo)                            |
 | POST   | `/api/auth/google`               | Ingreso con Google: recibe el token de Google y entrega una sesión (ver "Ingreso")                    |
+| POST   | `/api/auth/register`             | Cuenta nueva con correo y contraseña propias; entrega una sesión (ver "Correo y contraseña")          |
+| POST   | `/api/auth/login`                | Ingreso con correo y contraseña; entrega una sesión (ver "Correo y contraseña")                       |
+| POST   | `/api/auth/password`             | Cambia la contraseña y cierra las demás sesiones (necesita sesión; ver "Correo y contraseña")         |
 | GET    | `/api/auth/me`                   | Quién es la persona de la sesión, con sus roles y permisos (necesita sesión)                          |
 | POST   | `/api/auth/logout`               | Cierra la sesión que hace la petición, y solo esa (necesita sesión; responde 204)                     |
 | POST   | `/api/trips`                     | Abre un viaje y entrega las reglas de las detecciones (permiso `detections.create`)                   |
@@ -170,6 +173,17 @@ Las rutas no se guardan en la base de datos (`route_requests` y `route_steps` qu
 ```
 
 El `token` se manda después en cada petición protegida como `Authorization: Bearer <token>`. Errores: 400 `INVALID_REQUEST`, 401 `INVALID_GOOGLE_TOKEN` (siempre el mismo mensaje, sea cual sea el motivo), 403 `ACCOUNT_DISABLED`, 429 (más de 10 intentos por minuto y dirección IP, con `Retry-After`) y 503 (`AUTH_PROVIDER_UNAVAILABLE`, `AUTH_NOT_CONFIGURED` o `DATABASE_UNAVAILABLE`). Los 503 no cierran nada: el frontend reintenta.
+
+### Correo y contraseña (para el frontend)
+
+Las tres rutas están en `docs/AUTENTICACION.md`. En resumen:
+
+- `POST /api/auth/register` con `{ "name", "email", "password" }` responde **201** con lo mismo que el ingreso con Google (`token`, `expiresAt`, `user`). La cuenta nace con el correo **sin verificar** (`emailVerified: false`; el envío del correo de verificación llega con la recuperación de contraseña). Errores: 400 `INVALID_REQUEST`; 400 `INVALID_PASSWORD` con `details.problem` (`too_short`, `too_long`, `same_as_email` o `too_common`); 409 `EMAIL_TAKEN`; 429 (más de 5 registros en 10 minutos por dirección IP).
+- `POST /api/auth/login` con `{ "email", "password" }` responde **200** igual. Todo fallo responde el **mismo 401** `INVALID_CREDENTIALS` (correo sin cuenta, contraseña mala, cuenta desactivada o cuenta que solo usa Google) y tarda lo mismo: la respuesta no dice cuál fue. 429 con más de 10 intentos por minuto y dirección IP o más de 10 cada 15 minutos para el mismo correo.
+- `POST /api/auth/password` con `{ "currentPassword", "newPassword" }` (necesita sesión) cambia la contraseña y **cierra las demás sesiones**; la actual sigue abierta. Responde `{ "otherSessionsClosed": n }`. Una contraseña actual mala responde **403** `INVALID_CURRENT_PASSWORD` (no 401, para que el frontend no cierre una sesión buena); una cuenta que solo usa Google responde 409 `NO_PASSWORD_SET`.
+- La contraseña lleva de **10 a 128 caracteres**, sin reglas de letras o símbolos; no puede ser el correo ni una contraseña muy común. Solo se guarda un hash scrypt (`password_credentials`, migración 12).
+- `GET /api/auth/me` suma `hasPassword` y `emailVerified`: el frontend muestra "Cambiar contraseña" solo si `hasPassword`.
+- Si alguien ingresa con Google con el correo de una cuenta con contraseña **sin verificar**, la cuenta pasa a ser la de Google: se borra la contraseña y se cierran sus sesiones. Si el correo ya estaba verificado, se conserva todo y la cuenta queda con las dos formas de ingresar.
 
 ### Sesión, quién soy y salir (para el frontend)
 
@@ -277,12 +291,12 @@ src/
 
 ## Pruebas con base de datos
 
-`npm test` corre sin ninguna base. Las pruebas que revisan el SQL de verdad (sesiones, registros de acceso, cuentas, el ingreso con Google y la migración 08) se omiten solas si no existe `TEST_DATABASE_URL`. Ver `docs/AUTENTICACION.md`.
+`npm test` corre sin ninguna base. Las pruebas que revisan el SQL de verdad (sesiones, registros de acceso, cuentas, el ingreso con Google, las cuentas con contraseña y la migración 08) se omiten solas si no existe `TEST_DATABASE_URL`. Ver `docs/AUTENTICACION.md`.
 
 Para activarlas, una sola vez en tu computador:
 
 1. Crea una base vacía llamada `urban_road_monitor_test` (en pgAdmin, o con `psql -U postgres -c "CREATE DATABASE urban_road_monitor_test"`).
-2. Ejecútale, conectado como dueño de la base, en este orden: `database/00_run_all.sql`, `06_add_segment_geometry.sql`, `07_add_geometry_to_segment_status_view.sql`, `08_auth_base.sql`, `09_detections_base.sql`, `10_consolidation_base.sql` y `11_usuario_can_record.sql`. No hace falta `05_app_user.sql`.
+2. Ejecútale, conectado como dueño de la base, en este orden: `database/00_run_all.sql`, `06_add_segment_geometry.sql`, `07_add_geometry_to_segment_status_view.sql`, `08_auth_base.sql`, `09_detections_base.sql`, `10_consolidation_base.sql`, `11_usuario_can_record.sql` y `12_password_accounts.sql`. No hace falta `05_app_user.sql`.
 3. Agrega a tu `.env`: `TEST_DATABASE_URL=postgresql://postgres:TU_CONTRASEÑA@localhost:5432/urban_road_monitor_test`.
 
 Protecciones: estas pruebas vacían tablas, así que solo aceptan una base en `localhost` cuyo nombre termine en `_test`. Una dirección de Neon o de otra base se rechaza antes de conectar. Solo `TEST_DATABASE_URL` se lee del `.env` para las pruebas; el `DATABASE_URL` real nunca llega a ellas.

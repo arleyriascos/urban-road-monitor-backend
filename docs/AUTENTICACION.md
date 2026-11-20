@@ -96,11 +96,50 @@ No se registran los 400, los 429, `AUTH_NOT_CONFIGURED` ni la base caída. Ningu
 - `google-identity.test.ts` y `profile-rules.test.ts` cubren las reglas puras con sus bordes (10 minutos exactos, 60 segundos, 150 caracteres, 2048 caracteres).
 - `user.repository.integration.test.ts`, `auth.integration.test.ts` y `account.integration.test.ts` (todo el recorrido: ingreso, `/me`, un rol dado, y salir) corren contra PostgreSQL real (ver "Pruebas con base de datos" en el README), incluida una colisión provocada a propósito entre dos transacciones.
 
+## Correo y contraseña
+
+La segunda forma de ingresar (Fase 2). Las cuentas con contraseña viven en las mismas tablas (`users`, `sessions`, `auth_logs`) más `password_credentials` y la columna `users.email_verified_at` (migración 12).
+
+### La contraseña
+
+- Se guarda **solo un hash scrypt** (`node:crypto`, sin dependencias nuevas) con la forma `scrypt$N$r$p$sal$hash` (N=16384, r=8, p=1, sal de 16 bytes). Los parámetros viajan con el hash, así que se pueden subir después y los hashes viejos siguen sirviendo. Un hash mal formado o con parámetros descomunales responde "no", nunca revienta.
+- Reglas (`src/auth/password-rules.ts`): de 10 a 128 caracteres, sin reglas de composición, distinta del correo y fuera de una lista corta de contraseñas comunes o de un solo carácter repetido.
+- El texto se normaliza (NFKC) antes de hashear, para que la misma contraseña escrita de dos maneras Unicode sea la misma.
+
+### Los endpoints
+
+| Ruta                      | Quién      | Éxito                            | Errores                                                                   |
+| ------------------------- | ---------- | -------------------------------- | ------------------------------------------------------------------------- |
+| `POST /api/auth/register` | cualquiera | 201 `{ token, expiresAt, user }` | 400 `INVALID_REQUEST` / `INVALID_PASSWORD`, 409 `EMAIL_TAKEN`, 429, 503   |
+| `POST /api/auth/login`    | cualquiera | 200 `{ token, expiresAt, user }` | 400, 401 `INVALID_CREDENTIALS`, 429, 503                                  |
+| `POST /api/auth/password` | con sesión | 200 `{ otherSessionsClosed }`    | 400, 401, 403 `INVALID_CURRENT_PASSWORD`, 409 `NO_PASSWORD_SET`, 429, 503 |
+
+- **El ingreso no dice qué falló.** Correo sin cuenta, contraseña mala, cuenta desactivada y cuenta de solo Google responden el mismo 401 con el mismo texto. La contraseña se revisa **antes** de mirar si la cuenta está activa, y un correo sin cuenta gasta el mismo tiempo que una contraseña mala (se revisa contra un hash de mentira). El motivo real (`unknown_account`, `wrong_password`, `user_inactive`) solo va a `auth_logs`.
+- **Registrarse sí avisa** que el correo ya existe (409): es el precio de poder decirle a la persona qué le pasó. Está limitado a 5 por 10 minutos y dirección.
+- **Limitadores** (cada uno cuenta aparte): ingreso 10 por minuto y dirección IP, **más** 10 cada 15 minutos por correo (frena a quien rota direcciones para adivinar una cuenta; la contrapartida es que alguien puede bloquear un rato a una persona, que aún tiene Google y, más adelante, la recuperación por correo); cambio de contraseña 5 por minuto.
+- **Cambiar la contraseña** exige la actual, cierra todas las demás sesiones de la persona (la que hace la petición sigue abierta) y escribe `password_changed`. Una contraseña actual mala responde 403 y no 401, porque el frontend cierra la sesión con cualquier 401.
+- El correo se normaliza (sin espacios, en minúsculas) igual que con Google.
+
+### El correo verificado y Google
+
+`users.email_verified_at` dice si la persona demostró que el correo es suyo. Google lo demuestra en cada ingreso (las cuentas de Google nacen verificadas y las que ya existían se llenaron con la migración 12). Una cuenta hecha con contraseña nace **sin verificar**; la verificación por correo llega en la Fase 3.
+
+Si alguien ingresa con Google con el correo de una cuenta con contraseña:
+
+- **sin verificar:** la cuenta pasa a ser la de Google (quien la creó con contraseña quizá no era dueño del correo). Se borra su contraseña y se cierran sus sesiones;
+- **verificada:** se enlaza Google y se conserva la contraseña: queda con las dos formas de ingresar.
+
+`GET /api/auth/me` entrega `hasPassword` y `emailVerified` para que el frontend sepa si ofrecer "Cambiar contraseña".
+
+### Pruebas de las cuentas con contraseña
+
+`password-hash.test.ts` y `password-rules.test.ts` (reglas y bordes), `password-auth.service.test.ts` (el servicio con repositorios de mentira), `password-auth.controller.test.ts` (validación, límites y errores por HTTP), y `password-account.repository.integration.test.ts` y `password-auth.integration.test.ts` contra PostgreSQL real (registro, ingreso, cambio de contraseña con sesiones cerradas, y Google tomando una cuenta sin verificar).
+
 ## Quién soy y salir
 
 ### `GET /api/auth/me`
 
-Necesita sesión. Responde 200 con `{ "user": { id, email, fullName, avatarUrl, roles, permissions } }`: lo mismo que el ingreso más los **permisos** que dan sus roles (códigos como `detections.create`, en orden alfabético; quien solo tiene `usuario` trae `detections.create` y `trips.view_own`). Los roles y los permisos se leen en cada petición, sin guardarlos en la sesión, así que un rol dado o quitado se nota en la siguiente petición. Lleva `Cache-Control: no-store`.
+Necesita sesión. Responde 200 con `{ "user": { id, email, fullName, avatarUrl, roles, permissions, hasPassword, emailVerified } }`: lo mismo que el ingreso más los **permisos** que dan sus roles (códigos como `detections.create`, en orden alfabético; quien solo tiene `usuario` trae `detections.create` y `trips.view_own`). Los roles y los permisos se leen en cada petición, sin guardarlos en la sesión, así que un rol dado o quitado se nota en la siguiente petición. Lleva `Cache-Control: no-store`.
 
 - **401** (siempre el mismo cuerpo): sin sesión, o sesión desconocida, vencida, cerrada o de una cuenta desactivada.
 - **503** `DATABASE_UNAVAILABLE`: la base no responde. Nunca es un 401.
@@ -219,6 +258,7 @@ Las pruebas con SQL real corren contra un PostgreSQL local aparte, solo si exist
 - **Las cuentas de Google con letras fuera de ASCII en el correo no pueden ingresar** (401 `invalid_token`). Se rechazan a propósito, para que el `lower()` de PostgreSQL y el de JavaScript no discrepen a mitad de un ingreso.
 - **Un cuerpo de más de 100 KB responde 413 `PAYLOAD_TOO_LARGE`** (ya no 500), pero se lee antes de que el limitador lo cuente.
 - **La app de Google está en modo Prueba** hasta que se publique con la página de privacidad (ver arriba).
+- **La recuperación de contraseña y la verificación del correo** llegan con la Fase 3 (servicio de correo). Mientras tanto, quien olvide su contraseña ingresa con Google si usó ese correo.
 - **No hay botón para borrar la cuenta.** El borrado se pide por correo y se hace a mano; no se borra la fila, porque `app_user` no puede borrar usuarios.
 - Las dos dependencias indirectas `gcp-metadata` y `google-logging-utils` están fijadas en `overrides` de `package.json` porque sus versiones más nuevas tenían menos de dos semanas al instalarlas; se pueden quitar en el siguiente bloque de dependencias.
 - `sessions.ip_address` queda sin uso.
