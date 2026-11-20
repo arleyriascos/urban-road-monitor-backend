@@ -10,6 +10,9 @@ import {
 } from '../controllers/email-link.controller.js';
 import {
   loginRateLimit,
+  passwordRecoveryEmailRateLimit,
+  passwordRecoveryIpRateLimit,
+  passwordResetRateLimit,
   passwordChangeRateLimit,
   passwordLoginEmailRateLimit,
   passwordLoginRateLimit,
@@ -41,12 +44,18 @@ export interface EmailLinkRouteLimits {
   /** Goes after the session check: it counts the person, not the address. */
   sendByUser: RequestHandler;
   verify: RequestHandler;
+  forgotByIp: RequestHandler;
+  forgotByEmail: RequestHandler;
+  reset: RequestHandler;
 }
 
 const emailLinkRouteLimits: EmailLinkRouteLimits = {
   sendByIp: verificationSendIpRateLimit,
   sendByUser: verificationSendUserRateLimit,
   verify: verificationRateLimit,
+  forgotByIp: passwordRecoveryIpRateLimit,
+  forgotByEmail: passwordRecoveryEmailRateLimit,
+  reset: passwordResetRateLimit,
 };
 
 /**
@@ -62,7 +71,10 @@ export function createAuthRouter(
     'register' | 'login' | 'changePassword'
   > = passwordAuthController,
   limits: PasswordRouteLimits = passwordRouteLimits,
-  links: Pick<EmailLinkController, 'sendVerification' | 'verifyEmail'> = emailLinkController,
+  links: Pick<
+    EmailLinkController,
+    'sendVerification' | 'verifyEmail' | 'forgotPassword' | 'resetPassword'
+  > = emailLinkController,
   linkLimits: EmailLinkRouteLimits = emailLinkRouteLimits,
 ): Router {
   const router = Router();
@@ -83,6 +95,15 @@ export function createAuthRouter(
     links.sendVerification,
   );
   router.post('/auth/verify-email', linkLimits.verify, links.verifyEmail);
+  // Recovering a forgotten password: ask for the link by email (always the same answer), and
+  // choose the new password with it. Neither needs a session; the second closes all of them.
+  router.post(
+    '/auth/forgot-password',
+    linkLimits.forgotByIp,
+    linkLimits.forgotByEmail,
+    links.forgotPassword,
+  );
+  router.post('/auth/reset-password', linkLimits.reset, links.resetPassword);
   // Who the current session belongs to. Only this route and the ones below need a session.
   router.get('/auth/me', session, controller.me);
   // Closes the session that makes the request, and only that one.

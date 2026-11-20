@@ -179,6 +179,41 @@ export const verificationRateLimit = createRateLimit({
   message: (limit) => `Too many attempts to verify an email: the limit is ${limit} per minute`,
 });
 
+/** Recovery e-mails per IP address and 10 minutes (POST /api/auth/forgot-password). */
+export const PASSWORD_RECOVERY_REQUESTS_PER_10_MINUTES_BY_IP = 5;
+
+export const passwordRecoveryIpRateLimit = createRateLimit({
+  limit: PASSWORD_RECOVERY_REQUESTS_PER_10_MINUTES_BY_IP,
+  windowMs: 10 * 60_000,
+  message: (limit) => `Too many recovery requests: the limit is ${limit} per 10 minutes`,
+});
+
+/**
+ * Recovery e-mails per EMAIL and hour. It counts any email, with an account or not, so nobody
+ * can fill an inbox with messages, and the answer still tells nothing about the account.
+ */
+export const PASSWORD_RECOVERY_REQUESTS_PER_HOUR_BY_EMAIL = 3;
+
+export const passwordRecoveryEmailRateLimit = createRateLimit({
+  limit: PASSWORD_RECOVERY_REQUESTS_PER_HOUR_BY_EMAIL,
+  windowMs: 60 * 60_000,
+  addressOf: (req) => {
+    const email: unknown = (req.body as { email?: unknown } | undefined)?.email;
+    return typeof email === 'string'
+      ? `recovery:${email.trim().toLowerCase().slice(0, 255)}`
+      : clientAddress(req);
+  },
+  message: (limit) => `Too many recovery requests for this email: the limit is ${limit} per hour`,
+});
+
+/** Uses of a recovery link per IP address and minute (POST /api/auth/reset-password). */
+export const PASSWORD_RESET_ATTEMPTS_PER_MINUTE = 10;
+
+export const passwordResetRateLimit = createRateLimit({
+  limit: PASSWORD_RESET_ATTEMPTS_PER_MINUTE,
+  message: (limit) => `Too many attempts to choose a password: the limit is ${limit} per minute`,
+});
+
 /** Trip requests per IP address and minute (start, close, list, read). Counted apart from the rest. */
 export const TRIP_REQUESTS_PER_MINUTE = 20;
 

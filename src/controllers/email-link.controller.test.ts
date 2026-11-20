@@ -18,10 +18,17 @@ const session: AuthContext = {
 };
 const sendVerification = vi.fn();
 const verifyEmail = vi.fn();
+const requestPasswordReset = vi.fn();
+const resetPassword = vi.fn();
 const pass: RequestHandler = (_req, _res, next) => next();
 
 function appWith(
-  limits: Partial<Record<'sendByIp' | 'sendByUser' | 'verify', RequestHandler>> = {},
+  limits: Partial<
+    Record<
+      'sendByIp' | 'sendByUser' | 'verify' | 'forgotByIp' | 'forgotByEmail' | 'reset',
+      RequestHandler
+    >
+  > = {},
   authenticated: AuthContext | null = session,
 ): Express {
   const app = express();
@@ -34,8 +41,21 @@ function appWith(
       requireSession({ authenticate: vi.fn(async () => authenticated) }),
       undefined,
       undefined,
-      new EmailLinkController({ sendVerification, verifyEmail }),
-      { sendByIp: pass, sendByUser: pass, verify: pass, ...limits },
+      new EmailLinkController({
+        sendVerification,
+        verifyEmail,
+        requestPasswordReset,
+        resetPassword,
+      }),
+      {
+        sendByIp: pass,
+        sendByUser: pass,
+        verify: pass,
+        forgotByIp: pass,
+        forgotByEmail: pass,
+        reset: pass,
+        ...limits,
+      },
     ),
   );
   app.use(errorHandler);
@@ -169,5 +189,106 @@ describe('POST /api/auth/verify-email', () => {
     });
     expect(answer.status).toBe(400);
     expect(answer.body.error.code).toBe('INVALID_TOKEN');
+  });
+});
+
+describe('POST /api/auth/forgot-password', () => {
+  it('always says the same thing, and never asks for a session', async () => {
+    requestPasswordReset.mockReset().mockResolvedValue(undefined);
+
+    const answer = await post(appWith({}, null), '/api/auth/forgot-password', {
+      email: ' Ana@Example.com ',
+    });
+
+    expect(answer.status).toBe(200);
+    expect(answer.body).toEqual({ sent: true });
+    expect(answer.headers.get('cache-control')).toBe('no-store');
+    expect(requestPasswordReset).toHaveBeenCalledWith('Ana@Example.com');
+  });
+
+  it.each([
+    ['no email', {}],
+    ['an email that is not a text', { email: 7 }],
+    ['an empty email', { email: ' ' }],
+    ['a huge email', { email: 'a'.repeat(300) }],
+  ])('answers 400 for %s and never reaches the service', async (_name, body) => {
+    requestPasswordReset.mockReset();
+    const answer = await post(appWith({}, null), '/api/auth/forgot-password', body);
+    expect(answer.status).toBe(400);
+    expect(requestPasswordReset).not.toHaveBeenCalled();
+  });
+
+  it('is stopped by both limits before it reaches the service', async () => {
+    requestPasswordReset.mockReset();
+    const stop: RequestHandler = (_req, res) =>
+      void res.status(429).json({ error: { code: 'TOO_MANY_REQUESTS' } });
+    for (const limits of [{ forgotByIp: stop }, { forgotByEmail: stop }]) {
+      const answer = await post(appWith(limits, null), '/api/auth/forgot-password', {
+        email: 'a@example.com',
+      });
+      expect(answer.status).toBe(429);
+    }
+    expect(requestPasswordReset).not.toHaveBeenCalled();
+  });
+
+  it('shows the 503 when the e-mail service is not configured', async () => {
+    requestPasswordReset
+      .mockReset()
+      .mockRejectedValue(new AppError(503, 'MAIL_NOT_CONFIGURED', 'off'));
+    const answer = await post(appWith({}, null), '/api/auth/forgot-password', {
+      email: 'a@example.com',
+    });
+    expect(answer.status).toBe(503);
+    expect(answer.body.error.code).toBe('MAIL_NOT_CONFIGURED');
+  });
+});
+
+describe('POST /api/auth/reset-password', () => {
+  it('chooses the new password with the token, without a session', async () => {
+    resetPassword.mockReset().mockResolvedValue(1);
+
+    const answer = await post(appWith({}, null), '/api/auth/reset-password', {
+      token: 'x'.repeat(43),
+      newPassword: 'una contraseña nueva larga',
+    });
+
+    expect(answer.status).toBe(200);
+    expect(answer.body).toEqual({ reset: true });
+    expect(resetPassword).toHaveBeenCalledWith(
+      'x'.repeat(43),
+      'una contraseña nueva larga',
+      expect.objectContaining({ ip: expect.any(String) }),
+    );
+  });
+
+  it.each([
+    ['no token', { newPassword: 'abc' }],
+    ['no password', { token: 'x'.repeat(43) }],
+    ['a password that is not a text', { token: 'x'.repeat(43), newPassword: 5 }],
+    ['an empty password', { token: 'x'.repeat(43), newPassword: '' }],
+    ['a huge password', { token: 'x'.repeat(43), newPassword: 'a'.repeat(2000) }],
+  ])('answers 400 for %s and never reaches the service', async (_name, body) => {
+    resetPassword.mockReset();
+    const answer = await post(appWith({}, null), '/api/auth/reset-password', body);
+    expect(answer.status).toBe(400);
+    expect(answer.body.error.code).toBe('INVALID_REQUEST');
+    expect(resetPassword).not.toHaveBeenCalled();
+  });
+
+  it('shows the error of a link that does not work or a password that is refused', async () => {
+    resetPassword
+      .mockReset()
+      .mockRejectedValueOnce(new AppError(400, 'INVALID_TOKEN', 'bad'))
+      .mockRejectedValueOnce(
+        new AppError(400, 'INVALID_PASSWORD', 'bad', { problem: 'too_short' }),
+      );
+    const body = { token: 'x'.repeat(43), newPassword: 'abc' };
+
+    expect((await post(appWith({}, null), '/api/auth/reset-password', body)).body.error.code).toBe(
+      'INVALID_TOKEN',
+    );
+    expect((await post(appWith({}, null), '/api/auth/reset-password', body)).body.error.code).toBe(
+      'INVALID_PASSWORD',
+    );
   });
 });

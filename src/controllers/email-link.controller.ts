@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
+import { PASSWORD_MAX_LENGTH } from '../auth/password-rules.js';
 import { AppError } from '../errors/app-error.js';
 import { clientAddress } from '../middlewares/rate-limit.js';
 import { getAuth } from '../middlewares/require-session.js';
@@ -12,6 +13,23 @@ const token = z
   .max(200, 'token is too long');
 
 export const verifyEmailSchema = z.object({ token });
+
+export const forgotPasswordSchema = z.object({
+  email: z
+    .string({ error: 'email must be a text' })
+    .trim()
+    .min(1, 'email must not be empty')
+    .max(255, 'email is too long'),
+});
+
+/** The rules say which password is good; here it only has to be sane in size before hashing. */
+export const resetPasswordSchema = z.object({
+  token,
+  newPassword: z
+    .string({ error: 'newPassword must be a text' })
+    .min(1, 'newPassword must not be empty')
+    .max(PASSWORD_MAX_LENGTH * 8, 'newPassword is too long'),
+});
 
 function parse<T>(schema: z.ZodType<T>, body: unknown): T {
   const parsed = schema.safeParse(body);
@@ -29,14 +47,14 @@ function parse<T>(schema: z.ZodType<T>, body: unknown): T {
 
 /**
  * The endpoints of the links sent by e-mail: POST /api/auth/verify-email/send (behind a
- * session) and POST /api/auth/verify-email (the link; no session, because it may be opened on
- * another device).
+ * session), POST /api/auth/verify-email (the link; no session, because it may be opened on
+ * another device), POST /api/auth/forgot-password and POST /api/auth/reset-password.
  */
 export class EmailLinkController {
   constructor(
     private readonly service: Pick<
       EmailLinkService,
-      'sendVerification' | 'verifyEmail'
+      'sendVerification' | 'verifyEmail' | 'requestPasswordReset' | 'resetPassword'
     > = emailLinkService,
   ) {}
 
@@ -53,6 +71,19 @@ export class EmailLinkController {
     const input = parse(verifyEmailSchema, req.body);
     await this.service.verifyEmail(input.token, this.context(req));
     res.set('Cache-Control', 'no-store').status(200).json({ verified: true });
+  };
+
+  /** Always the same answer, whether or not the email has an account. */
+  forgotPassword = async (req: Request, res: Response) => {
+    const input = parse(forgotPasswordSchema, req.body);
+    await this.service.requestPasswordReset(input.email);
+    res.set('Cache-Control', 'no-store').status(200).json({ sent: true });
+  };
+
+  resetPassword = async (req: Request, res: Response) => {
+    const input = parse(resetPasswordSchema, req.body);
+    await this.service.resetPassword(input.token, input.newPassword, this.context(req));
+    res.set('Cache-Control', 'no-store').status(200).json({ reset: true });
   };
 }
 

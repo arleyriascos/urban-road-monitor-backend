@@ -186,3 +186,175 @@ describe('EmailLinkService verification', () => {
     });
   });
 });
+
+describe('EmailLinkService password recovery', () => {
+  const record = {
+    user: {
+      id: USER,
+      email: 'ana@example.com',
+      fullName: 'Ana',
+      avatarUrl: null,
+      roles: ['usuario'],
+    },
+    passwordHash: 'scrypt$16384$8$1$c2FsdA$aGFzaA',
+    isActive: true,
+  };
+
+  function setupReset(
+    overrides: {
+      record?: typeof record | null;
+      found?: UsableEmailToken | null;
+      closed?: number | null;
+      mailError?: Error;
+    } = {},
+  ) {
+    const base = setup({ found: overrides.found === undefined ? found : overrides.found });
+    const resetPassword = vi.fn(async () =>
+      overrides.closed === undefined ? 2 : overrides.closed,
+    );
+    const passwords = {
+      findForLogin: vi.fn(async () => (overrides.record === undefined ? record : overrides.record)),
+    };
+    const mailer: Mailer = {
+      send: vi.fn(async (message: MailMessage) => {
+        if (overrides.mailError) throw overrides.mailError;
+        base.sent.push(message);
+      }),
+    };
+    const service = new EmailLinkService(
+      { ...base.tokens, resetPassword } as never,
+      { mailer, appUrl: 'https://site.example.com' },
+      base.logs,
+      () => NOW,
+      () => TOKEN,
+      passwords,
+    );
+    return { ...base, service, resetPassword, passwords };
+  }
+
+  describe('requestPasswordReset', () => {
+    it('stores a token that lasts 1 hour and e-mails the link of the recovery page', async () => {
+      const { service, tokens, sent } = setupReset();
+
+      await service.requestPasswordReset(' Ana@Example.COM ');
+
+      expect(tokens.issue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: USER,
+          purpose: 'reset_password',
+          tokenHash: hashEmailToken(TOKEN),
+          expiresAt: new Date('2026-11-20T13:00:00.000Z'),
+        }),
+      );
+      expect(sent).toHaveLength(1);
+      expect(sent[0]!.to).toBe('ana@example.com');
+      expect(sent[0]!.text).toContain(`https://site.example.com/restablecer#token=${TOKEN}`);
+    });
+
+    it('looks the account up with the email trimmed and in lowercase', async () => {
+      const { service, passwords } = setupReset();
+      await service.requestPasswordReset('  ANA@Example.com ');
+      expect(passwords.findForLogin).toHaveBeenCalledWith('ana@example.com');
+    });
+
+    it.each([
+      ['no account (or one that only has Google)', { record: null }],
+      ['an inactive account', { record: { ...record, isActive: false } }],
+    ])('does nothing and says nothing for %s', async (_name, extra) => {
+      const { service, tokens, sent } = setupReset(extra);
+      await expect(service.requestPasswordReset('ana@example.com')).resolves.toBeUndefined();
+      expect(tokens.issue).not.toHaveBeenCalled();
+      expect(sent).toHaveLength(0);
+    });
+
+    it('does not wait for the e-mail service, and hides its failure', async () => {
+      const { service } = setupReset({ mailError: new Error('Brevo could not be reached') });
+      await expect(service.requestPasswordReset('ana@example.com')).resolves.toBeUndefined();
+    });
+
+    it('answers 503 when the e-mail service is not configured, for any email', async () => {
+      const service = new EmailLinkService({} as never, null);
+      await expect(service.requestPasswordReset('whoever@example.com')).rejects.toMatchObject({
+        statusCode: 503,
+        code: 'MAIL_NOT_CONFIGURED',
+      });
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('replaces the password with a scrypt hash, never the text, and logs it', async () => {
+      const { service, resetPassword, logs } = setupReset();
+
+      const closed = await service.resetPassword(TOKEN, 'una contraseña nueva larga', {
+        userAgent: 'agent',
+      });
+
+      expect(closed).toBe(2);
+      expect(resetPassword).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tokenId: 'token-1',
+          userId: USER,
+          now: NOW,
+          passwordHash: expect.stringMatching(/^scrypt\$/),
+        }),
+      );
+      expect(JSON.stringify(resetPassword.mock.calls)).not.toContain('una contraseña nueva larga');
+      expect(logs.record).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'password_reset', success: true, userId: USER }),
+      );
+    });
+
+    it.each([
+      ['too short', 'corta', 'too_short'],
+      ['the same as the email', 'ana@example.com', 'same_as_email'],
+      ['too common', 'password123', 'too_common'],
+    ])(
+      'refuses a password that is %s and does not spend the link',
+      async (_name, password, problem) => {
+        const { service, resetPassword } = setupReset();
+
+        const error = await service.resetPassword(TOKEN, password).catch((e: unknown) => e);
+
+        expect(error).toMatchObject({
+          statusCode: 400,
+          code: 'INVALID_PASSWORD',
+          details: { problem },
+        });
+        expect(resetPassword).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      ['a text that cannot be a token', 'short', {}],
+      ['an unknown, used or expired token', TOKEN, { found: null }],
+      ['an inactive account', TOKEN, { found: { ...found, isActive: false } }],
+      ['an account with no password', TOKEN, { found: { ...found, hasPassword: false } }],
+      ['a token somebody used first', TOKEN, { closed: null }],
+    ])('answers the same 400 for %s', async (_name, token, extra) => {
+      const { service, logs } = setupReset(extra);
+
+      const error = await service
+        .resetPassword(token, 'una contraseña nueva larga', { ip: '203.0.113.7' })
+        .catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ statusCode: 400, code: 'INVALID_TOKEN' });
+      expect(logs.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'password_reset',
+          success: false,
+          reason: 'invalid_token',
+        }),
+      );
+    });
+
+    it('answers 503 when the database fails while replacing the password', async () => {
+      const { service, resetPassword } = setupReset();
+      resetPassword.mockRejectedValue(new Error('down'));
+      await expect(
+        service.resetPassword(TOKEN, 'una contraseña nueva larga'),
+      ).rejects.toMatchObject({
+        statusCode: 503,
+      });
+    });
+  });
+});

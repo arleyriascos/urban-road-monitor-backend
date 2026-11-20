@@ -26,6 +26,7 @@ export interface HarnessAnswer {
     token: string;
     sent?: boolean;
     verified?: boolean;
+    reset?: boolean;
     user: { id: string; email: string };
     error: { code: string; message: string; details?: { problem?: string } };
   };
@@ -51,6 +52,9 @@ export async function startEmailLinkApp(db: PrismaClient, mailConfigured = true)
     new EmailTokenRepository(db),
     mailConfigured ? { mailer, appUrl: 'https://site.example.com' } : null,
     logs,
+    undefined,
+    undefined,
+    new PasswordAccountRepository(db),
   );
 
   const app = express();
@@ -64,7 +68,14 @@ export async function startEmailLinkApp(db: PrismaClient, mailConfigured = true)
       new PasswordAuthController(passwordService),
       { register: pass, login: pass, loginByEmail: pass, change: pass },
       new EmailLinkController(links),
-      { sendByIp: pass, sendByUser: pass, verify: pass },
+      {
+        sendByIp: pass,
+        sendByUser: pass,
+        verify: pass,
+        forgotByIp: pass,
+        forgotByEmail: pass,
+        reset: pass,
+      },
     ),
   );
   app.use(errorHandler);
