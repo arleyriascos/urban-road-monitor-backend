@@ -64,6 +64,33 @@ export const envSchema = z
         )
         .optional(),
     ),
+    // The e-mail service (Brevo) that sends the links to verify an email and to choose a new
+    // password. All three are optional, and the service works only with the three together:
+    // without them the routes that send e-mail answer 503 and the rest of the API keeps working.
+    // The API key is a secret: it lives only in the Render panel and in the local .env.
+    BREVO_API_KEY: optional(
+      z
+        .string()
+        .trim()
+        .min(20, 'BREVO_API_KEY looks too short to be an API key')
+        .regex(/^\S+$/, 'BREVO_API_KEY must not contain spaces'),
+    ),
+    // The sender of the messages: an address verified in Brevo.
+    MAIL_FROM: optional(
+      z.string().trim().max(255).pipe(z.email('MAIL_FROM must be an email address')),
+    ),
+    MAIL_FROM_NAME: z.string().trim().min(1).max(100).default('Urban Road Monitor'),
+    // The address of the frontend, where the links of the messages lead (no path, no query).
+    APP_URL: optional(
+      z
+        .string()
+        .trim()
+        .transform((value) => value.replace(/\/+$/, ''))
+        .refine((value) => isServiceUrl(value) && new URL(value).pathname === '/', {
+          message:
+            'APP_URL must be the address of the site (http:// or https://), with no path, user, query or fragment',
+        }),
+    ),
     // How many routes the route cache keeps (an LRU cache: the least recently used goes first).
     ROUTE_CACHE_CAPACITY: z.coerce.number().int().min(1).max(10_000).default(200),
   })
@@ -76,7 +103,23 @@ export const envSchema = z
         message: 'AI_SERVICE_URL must use https:// in production',
       });
     }
+    // The links of the messages carry a one-use token: in production they must not be plain http.
+    if (value.NODE_ENV === 'production' && value.APP_URL?.startsWith('http://')) {
+      context.addIssue({
+        code: 'custom',
+        path: ['APP_URL'],
+        message: 'APP_URL must use https:// in production',
+      });
+    }
   });
+
+/** An empty value (NAME= in .env) counts as not set. */
+function optional<T extends z.ZodType>(schema: T) {
+  return z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    schema.optional(),
+  );
+}
 
 function isServiceUrl(value: string): boolean {
   try {

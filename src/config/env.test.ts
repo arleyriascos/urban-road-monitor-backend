@@ -126,3 +126,58 @@ describe('envSchema GOOGLE_CLIENT_ID', () => {
     );
   });
 });
+
+describe('envSchema e-mail service', () => {
+  const key = 'k'.repeat(30);
+
+  it('is all optional, with a default name for the sender', () => {
+    const parsed = envSchema.parse(base);
+    expect(parsed.BREVO_API_KEY).toBeUndefined();
+    expect(parsed.MAIL_FROM).toBeUndefined();
+    expect(parsed.APP_URL).toBeUndefined();
+    expect(parsed.MAIL_FROM_NAME).toBe('Urban Road Monitor');
+  });
+
+  it('treats empty values as not set', () => {
+    const parsed = envSchema.parse({ ...base, BREVO_API_KEY: '', MAIL_FROM: ' ', APP_URL: '' });
+    expect(parsed.BREVO_API_KEY).toBeUndefined();
+    expect(parsed.MAIL_FROM).toBeUndefined();
+    expect(parsed.APP_URL).toBeUndefined();
+  });
+
+  it('accepts the three together and cleans spaces and the final slash', () => {
+    const parsed = envSchema.parse({
+      ...base,
+      BREVO_API_KEY: ` ${key}\n`,
+      MAIL_FROM: ' sender@example.com ',
+      MAIL_FROM_NAME: 'Urban Road',
+      APP_URL: 'https://site.example.com/',
+    });
+    expect(parsed.BREVO_API_KEY).toBe(key);
+    expect(parsed.MAIL_FROM).toBe('sender@example.com');
+    expect(parsed.MAIL_FROM_NAME).toBe('Urban Road');
+    expect(parsed.APP_URL).toBe('https://site.example.com');
+  });
+
+  it.each([
+    ['a key that is too short', { BREVO_API_KEY: 'short' }],
+    ['a key with spaces inside', { BREVO_API_KEY: `${key} ${key}` }],
+    ['a sender that is not an email', { MAIL_FROM: 'not an email' }],
+    ['an app address with a path', { APP_URL: 'https://site.example.com/app' }],
+    ['an app address with a query', { APP_URL: 'https://site.example.com/?a=1' }],
+    ['an app address that is not a URL', { APP_URL: 'site.example.com' }],
+  ])('rejects %s', (_name, extra) => {
+    expect(envSchema.safeParse({ ...base, ...extra }).success).toBe(false);
+  });
+
+  it('allows http for APP_URL on a computer but not in production', () => {
+    expect(envSchema.safeParse({ ...base, APP_URL: 'http://localhost:5173' }).success).toBe(true);
+    const production = envSchema.safeParse({
+      ...base,
+      NODE_ENV: 'production',
+      APP_URL: 'http://site.example.com',
+    });
+    expect(production.success).toBe(false);
+    expect(production.error?.issues[0]?.message).toBe('APP_URL must use https:// in production');
+  });
+});
