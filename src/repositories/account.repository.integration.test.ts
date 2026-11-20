@@ -53,6 +53,23 @@ describe.skipIf(!url)('AccountRepository (real database)', () => {
         avatarUrl: null,
         roles: ['usuario'],
         permissions: BASE_PERMISSIONS,
+        hasPassword: false,
+        emailVerified: false,
+      });
+    });
+
+    it('says whether the account has a password and whether its email is verified', async () => {
+      const withPassword = await createTestUser(db, {
+        passwordHash: 'scrypt$16384$8$1$c2FsdA$aGFzaA',
+      });
+      const verified = await createTestUser(db, { emailVerifiedAt: new Date('2026-11-01') });
+      expect(await repository.findProfile(withPassword)).toMatchObject({
+        hasPassword: true,
+        emailVerified: false,
+      });
+      expect(await repository.findProfile(verified)).toMatchObject({
+        hasPassword: false,
+        emailVerified: true,
       });
     });
 

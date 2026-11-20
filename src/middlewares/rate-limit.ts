@@ -101,6 +101,51 @@ export const loginRateLimit = createRateLimit({
   message: (limit) => `Too many sign-in attempts: the limit is ${limit} per minute`,
 });
 
+/** Registrations per IP address and 10 minutes (POST /api/auth/register). Counted apart from routes. */
+export const REGISTER_ATTEMPTS_PER_10_MINUTES = 5;
+
+export const registerRateLimit = createRateLimit({
+  limit: REGISTER_ATTEMPTS_PER_10_MINUTES,
+  windowMs: 10 * 60_000,
+  message: (limit) => `Too many sign-up attempts: the limit is ${limit} per 10 minutes`,
+});
+
+/** Password sign-ins per IP address and minute (POST /api/auth/login). Counted apart from the rest. */
+export const PASSWORD_LOGIN_ATTEMPTS_PER_MINUTE = 10;
+
+export const passwordLoginRateLimit = createRateLimit({
+  limit: PASSWORD_LOGIN_ATTEMPTS_PER_MINUTE,
+  message: (limit) => `Too many sign-in attempts: the limit is ${limit} per minute`,
+});
+
+/**
+ * Password sign-ins per EMAIL and 15 minutes. It stops someone who rotates IP addresses to
+ * guess the password of one account. The price: someone can also use it to keep a person from
+ * signing in for a while; that person still has Google and the recovery by e-mail.
+ */
+export const PASSWORD_LOGIN_ATTEMPTS_PER_EMAIL = 10;
+
+export const passwordLoginEmailRateLimit = createRateLimit({
+  limit: PASSWORD_LOGIN_ATTEMPTS_PER_EMAIL,
+  windowMs: 15 * 60_000,
+  addressOf: (req) => {
+    const email: unknown = (req.body as { email?: unknown } | undefined)?.email;
+    return typeof email === 'string'
+      ? `email:${email.trim().toLowerCase().slice(0, 255)}`
+      : clientAddress(req);
+  },
+  message: (limit) =>
+    `Too many sign-in attempts for this email: the limit is ${limit} per 15 minutes`,
+});
+
+/** Password changes per IP address and minute (POST /api/auth/password). */
+export const PASSWORD_CHANGES_PER_MINUTE = 5;
+
+export const passwordChangeRateLimit = createRateLimit({
+  limit: PASSWORD_CHANGES_PER_MINUTE,
+  message: (limit) => `Too many password changes: the limit is ${limit} per minute`,
+});
+
 /** Trip requests per IP address and minute (start, close, list, read). Counted apart from the rest. */
 export const TRIP_REQUESTS_PER_MINUTE = 20;
 

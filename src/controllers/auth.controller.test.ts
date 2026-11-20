@@ -223,6 +223,8 @@ describe('GET /api/auth/me', () => {
     avatarUrl: 'https://lh3.example.com/a/photo=s96-c',
     roles: ['colaborador', 'usuario'],
     permissions: ['detections.create', 'trips.view_own'],
+    hasPassword: false,
+    emailVerified: true,
   };
 
   /** The real session check with a service that answers `authenticated`, and a fake profile. */
@@ -264,12 +266,12 @@ describe('GET /api/auth/me', () => {
     expect(json).toEqual({ user: profile });
   });
 
-  it('answers the same fields as the sign-in plus permissions, and nothing about the session', async () => {
+  it('answers the same fields as the sign-in plus permissions and the state of the account, and nothing about the session', async () => {
     const { json } = await getMe(appWithMe(vi.fn<Profile>(async () => profile)), bearer);
 
     expect(Object.keys(json)).toEqual(['user']);
     expect(Object.keys(json.user as object).sort()).toEqual(
-      [...Object.keys(result.user), 'permissions'].sort(),
+      [...Object.keys(result.user), 'permissions', 'hasPassword', 'emailVerified'].sort(),
     );
   });
 

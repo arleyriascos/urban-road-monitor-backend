@@ -1,7 +1,32 @@
 import { Router, type RequestHandler } from 'express';
 import { authController, type AuthController } from '../controllers/auth.controller.js';
-import { loginRateLimit } from '../middlewares/rate-limit.js';
+import {
+  passwordAuthController,
+  type PasswordAuthController,
+} from '../controllers/password-auth.controller.js';
+import {
+  loginRateLimit,
+  passwordChangeRateLimit,
+  passwordLoginEmailRateLimit,
+  passwordLoginRateLimit,
+  registerRateLimit,
+} from '../middlewares/rate-limit.js';
 import { requireSession } from '../middlewares/require-session.js';
+
+/** The limiters of the routes of the accounts with a password, each one counted apart. */
+export interface PasswordRouteLimits {
+  register: RequestHandler;
+  login: RequestHandler;
+  loginByEmail: RequestHandler;
+  change: RequestHandler;
+}
+
+const passwordRouteLimits: PasswordRouteLimits = {
+  register: registerRateLimit,
+  login: passwordLoginRateLimit,
+  loginByEmail: passwordLoginEmailRateLimit,
+  change: passwordChangeRateLimit,
+};
 
 /**
  * The routes of the sign-in, under /api. The controller, the limiter and the session check can
@@ -11,10 +36,20 @@ export function createAuthRouter(
   controller: Pick<AuthController, 'loginWithGoogle' | 'me' | 'logout'> = authController,
   rateLimit: RequestHandler = loginRateLimit,
   session: RequestHandler = requireSession(),
+  password: Pick<
+    PasswordAuthController,
+    'register' | 'login' | 'changePassword'
+  > = passwordAuthController,
+  limits: PasswordRouteLimits = passwordRouteLimits,
 ): Router {
   const router = Router();
   // At most 10 attempts per minute and IP address, before the token is even looked at.
   router.post('/auth/google', rateLimit, controller.loginWithGoogle);
+  // Accounts with an email and a password. Each route has its own limiter, counted apart.
+  router.post('/auth/register', limits.register, password.register);
+  router.post('/auth/login', limits.login, limits.loginByEmail, password.login);
+  // Changes the password of the person of the session; the other sessions are closed.
+  router.post('/auth/password', limits.change, session, password.changePassword);
   // Who the current session belongs to. Only this route and the ones below need a session.
   router.get('/auth/me', session, controller.me);
   // Closes the session that makes the request, and only that one.

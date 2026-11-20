@@ -6,6 +6,10 @@ import type { AuthUser } from './user.repository.js';
 export interface AccountProfile extends AuthUser {
   /** The permission codes their roles grant, in alphabetical order (detections.create...). */
   permissions: string[];
+  /** The account has a password of its own (it may also use Google). */
+  hasPassword: boolean;
+  /** The person proved the email is theirs (Google does it at every sign-in). */
+  emailVerified: boolean;
 }
 
 interface RawProfileRow {
@@ -15,6 +19,8 @@ interface RawProfileRow {
   avatar_url: string | null;
   roles: string[];
   permissions: string[];
+  has_password: boolean;
+  email_verified: boolean;
 }
 
 /**
@@ -48,7 +54,9 @@ export class AccountRepository {
                JOIN role_permissions rp ON rp.role_id = ur.role_id
                JOIN permissions p ON p.id = rp.permission_id
                WHERE ur.user_id = u.id
-             ) AS permissions
+             ) AS permissions,
+             EXISTS (SELECT 1 FROM password_credentials pc WHERE pc.user_id = u.id) AS has_password,
+             u.email_verified_at IS NOT NULL AS email_verified
       FROM users u
       WHERE u.id = ${userId}::uuid AND u.is_active AND u.deleted_at IS NULL`;
     const row = rows[0];
@@ -62,6 +70,8 @@ export class AccountRepository {
       avatarUrl: row.avatar_url,
       roles: [...row.roles].sort(),
       permissions: [...row.permissions].sort(),
+      hasPassword: row.has_password,
+      emailVerified: row.email_verified,
     };
   }
 

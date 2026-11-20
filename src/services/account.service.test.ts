@@ -13,6 +13,8 @@ const profile: AccountProfile = {
   avatarUrl: null,
   roles: ['colaborador', 'usuario'],
   permissions: ['detections.create'],
+  hasPassword: false,
+  emailVerified: true,
 };
 
 afterEach(() => {
