@@ -5,8 +5,11 @@ describe('openApiDocument', () => {
   it('lists the health, map, route, auth, trips, clustering and internal endpoints', () => {
     expect(Object.keys(openApiDocument.paths).sort()).toEqual([
       '/api/auth/google',
+      '/api/auth/login',
       '/api/auth/logout',
       '/api/auth/me',
+      '/api/auth/password',
+      '/api/auth/register',
       '/api/clustering/runs',
       '/api/health',
       '/api/hello',

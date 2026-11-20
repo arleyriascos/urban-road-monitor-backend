@@ -7,11 +7,14 @@ import { openApiDocument } from './openapi.js';
 const post = authPaths['/api/auth/google'].post;
 
 describe('auth documentation', () => {
-  it('describes three endpoints under the Auth tag', () => {
+  it('describes the endpoints of the sign-in under the Auth tag', () => {
     expect(Object.keys(authPaths).sort()).toEqual([
       '/api/auth/google',
+      '/api/auth/login',
       '/api/auth/logout',
       '/api/auth/me',
+      '/api/auth/password',
+      '/api/auth/register',
     ]);
     expect(Object.keys(authPaths['/api/auth/google'])).toEqual(['post']);
     expect(Object.keys(authPaths['/api/auth/me'])).toEqual(['get']);
@@ -39,8 +42,12 @@ describe('auth documentation', () => {
     expect(out[401].description).toContain('UNAUTHORIZED');
   });
 
-  it('lists the permissions in the profile, after the five fields of the person', () => {
-    expect(authSchemas.AccountProfile.required).toEqual(['permissions']);
+  it('lists the permissions and the state of the account in the profile', () => {
+    expect(authSchemas.AccountProfile.required).toEqual([
+      'permissions',
+      'hasPassword',
+      'emailVerified',
+    ]);
     expect(authSchemas.AccountProfile.allOf).toEqual([{ $ref: '#/components/schemas/AuthUser' }]);
     expect(authSchemas.MeAnswer.required).toEqual(['user']);
   });
@@ -111,5 +118,46 @@ describe('auth documentation', () => {
     expect(schemas).toEqual(
       expect.arrayContaining(['GoogleLoginRequest', 'GoogleLoginAnswer', 'AuthUser']),
     );
+  });
+
+  it('documents the endpoints of the accounts with a password', () => {
+    const register = authPaths['/api/auth/register'].post;
+    const loginPath = authPaths['/api/auth/login'].post;
+    const change = authPaths['/api/auth/password'].post;
+
+    expect(Object.keys(register.responses).sort()).toEqual(['201', '400', '409', '429', '503']);
+    expect(Object.keys(loginPath.responses).sort()).toEqual(['200', '400', '401', '429', '503']);
+    expect(Object.keys(change.responses).sort()).toEqual([
+      '200',
+      '400',
+      '401',
+      '403',
+      '409',
+      '429',
+      '503',
+    ]);
+    expect(register.responses[409].description).toContain('EMAIL_TAKEN');
+    expect(loginPath.responses[401].description).toContain('INVALID_CREDENTIALS');
+    expect(change.responses[403].description).toContain('INVALID_CURRENT_PASSWORD');
+    expect(change.responses[409].description).toContain('NO_PASSWORD_SET');
+    expect('security' in register).toBe(false);
+    expect('security' in loginPath).toBe(false);
+    expect(change.security).toEqual([{ sessionToken: [] }]);
+  });
+
+  it('is in the main document, and every reference it makes exists', () => {
+    const document = JSON.stringify(openApiDocument);
+    for (const name of [
+      'RegisterRequest',
+      'PasswordLoginRequest',
+      'ChangePasswordRequest',
+      'ChangePasswordAnswer',
+    ]) {
+      expect(Object.keys(openApiDocument.components.schemas)).toContain(name);
+      expect(document).toContain(`#/components/schemas/${name}`);
+    }
+    for (const path of ['/api/auth/register', '/api/auth/login', '/api/auth/password']) {
+      expect(Object.keys(openApiDocument.paths)).toContain(path);
+    }
   });
 });

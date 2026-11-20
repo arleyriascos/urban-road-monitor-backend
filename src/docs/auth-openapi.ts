@@ -1,4 +1,11 @@
-import { LOGIN_ATTEMPTS_PER_MINUTE } from '../middlewares/rate-limit.js';
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '../auth/password-rules.js';
+import {
+  LOGIN_ATTEMPTS_PER_MINUTE,
+  PASSWORD_CHANGES_PER_MINUTE,
+  PASSWORD_LOGIN_ATTEMPTS_PER_EMAIL,
+  PASSWORD_LOGIN_ATTEMPTS_PER_MINUTE,
+  REGISTER_ATTEMPTS_PER_10_MINUTES,
+} from '../middlewares/rate-limit.js';
 
 /**
  * OpenAPI description of the sign-in with Google (POST /api/auth/google), of asking who the
@@ -14,10 +21,14 @@ export const authTags = [
   {
     name: 'Auth',
     description:
-      'Sign-in with Google, who I am, and sign-out. The frontend sends the ID token that the ' +
-      'Google button gives it and receives a session identifier, which it sends in every ' +
-      'protected request as "Authorization: Bearer <identifier>". ' +
-      `Signing in: at most ${LOGIN_ATTEMPTS_PER_MINUTE} attempts per minute and IP address.`,
+      'Sign-in with Google or with an email and a password, who I am, changing the password, ' +
+      'and sign-out. The frontend sends the ID token that the Google button gives it, or the ' +
+      'email and password of the person, and receives a session identifier, which it sends in ' +
+      'every protected request as "Authorization: Bearer <identifier>". ' +
+      `Google: at most ${LOGIN_ATTEMPTS_PER_MINUTE} attempts per minute and IP address. ` +
+      `Password: at most ${PASSWORD_LOGIN_ATTEMPTS_PER_MINUTE} per minute and IP address and ` +
+      `${PASSWORD_LOGIN_ATTEMPTS_PER_EMAIL} per 15 minutes and email; ` +
+      `${REGISTER_ATTEMPTS_PER_10_MINUTES} sign-ups per 10 minutes and IP address.`,
   },
 ];
 
@@ -85,13 +96,74 @@ export const authSchemas = {
           'that was just given or taken away shows here at once.',
         example: ['detections.create', 'routes.view_history'],
       },
+      hasPassword: {
+        type: 'boolean',
+        description:
+          'The account has a password of its own (it may also use Google). Only then can ' +
+          'POST /api/auth/password change it.',
+      },
+      emailVerified: {
+        type: 'boolean',
+        description:
+          'The person proved that the email is theirs. Google does it at every sign-in; an ' +
+          'account made with a password starts as false.',
+      },
     },
-    required: ['permissions'],
+    required: ['permissions', 'hasPassword', 'emailVerified'],
   },
   MeAnswer: {
     type: 'object',
     properties: { user: { $ref: '#/components/schemas/AccountProfile' } },
     required: ['user'],
+  },
+  RegisterRequest: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', minLength: 1, maxLength: 150, example: 'Ana Pérez' },
+      email: { type: 'string', format: 'email', maxLength: 255, example: 'ana@example.com' },
+      password: {
+        type: 'string',
+        minLength: PASSWORD_MIN_LENGTH,
+        maxLength: PASSWORD_MAX_LENGTH,
+        description:
+          `From ${PASSWORD_MIN_LENGTH} to ${PASSWORD_MAX_LENGTH} characters, with no rule ` +
+          'about letters or symbols. It cannot be the email nor a very common password.',
+      },
+    },
+    required: ['name', 'email', 'password'],
+  },
+  PasswordLoginRequest: {
+    type: 'object',
+    properties: {
+      email: { type: 'string', maxLength: 255, example: 'ana@example.com' },
+      password: { type: 'string', minLength: 1 },
+    },
+    required: ['email', 'password'],
+  },
+  ChangePasswordRequest: {
+    type: 'object',
+    properties: {
+      currentPassword: { type: 'string', minLength: 1 },
+      newPassword: {
+        type: 'string',
+        minLength: PASSWORD_MIN_LENGTH,
+        maxLength: PASSWORD_MAX_LENGTH,
+        description:
+          'The same rules as the password of the sign-up, and different from the current one.',
+      },
+    },
+    required: ['currentPassword', 'newPassword'],
+  },
+  ChangePasswordAnswer: {
+    type: 'object',
+    properties: {
+      otherSessionsClosed: {
+        type: 'integer',
+        minimum: 0,
+        description: 'How many other sessions of the person were closed. The current one stays.',
+      },
+    },
+    required: ['otherSessionsClosed'],
   },
   GoogleLoginAnswer: {
     type: 'object',
@@ -116,7 +188,106 @@ export const authSchemas = {
   },
 };
 
+const sessionAnswer = (description: string) => ({
+  description,
+  content: { 'application/json': { schema: { $ref: '#/components/schemas/GoogleLoginAnswer' } } },
+});
+
 export const authPaths = {
+  '/api/auth/register': {
+    post: {
+      tags: ['Auth'],
+      summary: 'Sign up with an email and a password',
+      description:
+        'Makes an account with the role "usuario", whose email is NOT verified yet, and opens ' +
+        'a session for it. Only a hash of the password is stored (scrypt). An account that ' +
+        'later signs in with Google using the same email becomes the Google account (see ' +
+        'POST /api/auth/google).',
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': { schema: { $ref: '#/components/schemas/RegisterRequest' } },
+        },
+      },
+      responses: {
+        201: sessionAnswer('The session and the person. Sent with "Cache-Control: no-store".'),
+        400: errorResponse(
+          'INVALID_REQUEST (the body is not valid) or INVALID_PASSWORD (the password breaks a ' +
+            'rule: details.problem is too_short, too_long, same_as_email or too_common)',
+        ),
+        409: errorResponse('EMAIL_TAKEN: an account with that email already exists'),
+        429: errorResponse(
+          `TOO_MANY_REQUESTS: more than ${REGISTER_ATTEMPTS_PER_10_MINUTES} sign-ups in 10 minutes; see Retry-After`,
+        ),
+        503: errorResponse('DATABASE_UNAVAILABLE'),
+      },
+    },
+  },
+  '/api/auth/login': {
+    post: {
+      tags: ['Auth'],
+      summary: 'Sign in with an email and a password',
+      description:
+        'Opens a session. Every failure answers the same 401, whether the email has no account, ' +
+        'the password is wrong or the account is disabled, and takes the same time: the answer ' +
+        'never says which. The reason is kept only in the audit log.',
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': { schema: { $ref: '#/components/schemas/PasswordLoginRequest' } },
+        },
+      },
+      responses: {
+        200: sessionAnswer('The session and the person. Sent with "Cache-Control: no-store".'),
+        400: errorResponse('INVALID_REQUEST: the body is not valid'),
+        401: errorResponse('INVALID_CREDENTIALS: the email or the password is not correct'),
+        429: errorResponse(
+          `TOO_MANY_REQUESTS: more than ${PASSWORD_LOGIN_ATTEMPTS_PER_MINUTE} attempts per minute from the address, or ` +
+            `${PASSWORD_LOGIN_ATTEMPTS_PER_EMAIL} per 15 minutes for that email; see Retry-After`,
+        ),
+        503: errorResponse('DATABASE_UNAVAILABLE'),
+      },
+    },
+  },
+  '/api/auth/password': {
+    post: {
+      tags: ['Auth'],
+      summary: 'Change the password of the current session’s account',
+      description:
+        'Needs the current password. All the OTHER sessions of the person are closed; the one ' +
+        'that makes the request stays open. A wrong current password answers 403 and not 401, ' +
+        'because a 401 makes the frontend drop a session that is perfectly good. An account ' +
+        'that only signs in with Google has no password to change.',
+      security: [{ sessionToken: [] }],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': { schema: { $ref: '#/components/schemas/ChangePasswordRequest' } },
+        },
+      },
+      responses: {
+        200: {
+          description: 'The password was changed. Sent with "Cache-Control: no-store".',
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/ChangePasswordAnswer' } },
+          },
+        },
+        400: errorResponse(
+          'INVALID_REQUEST or INVALID_PASSWORD (the new password breaks a rule or equals the ' +
+            'current one: details.problem)',
+        ),
+        401: errorResponse('UNAUTHORIZED: there is no valid session'),
+        403: errorResponse('INVALID_CURRENT_PASSWORD: the current password is not correct'),
+        409: errorResponse(
+          'NO_PASSWORD_SET: the account has no password (it signs in with Google)',
+        ),
+        429: errorResponse(
+          `TOO_MANY_REQUESTS: more than ${PASSWORD_CHANGES_PER_MINUTE} attempts in a minute; see Retry-After`,
+        ),
+        503: errorResponse('DATABASE_UNAVAILABLE'),
+      },
+    },
+  },
   '/api/auth/google': {
     post: {
       tags: ['Auth'],
@@ -126,7 +297,9 @@ export const authPaths = {
         'that its email is verified and that it was issued less than 10 minutes ago. Then it ' +
         'finds the person by their Google identity. If there is none, an account with the same ' +
         'email gets the identity linked, and if there is no such account either, a new one is ' +
-        'made with the role "usuario". The name and photo come from Google at every sign-in; ' +
+        'made with the role "usuario". An account made with a password whose email was never ' +
+        'verified becomes the Google account: its password is deleted and its sessions are ' +
+        'closed. The name and photo come from Google at every sign-in; ' +
         'the email of an existing account never changes. Every problem with the token answers ' +
         'the same 401, whatever the reason, and the reason is kept only in the audit log.',
       requestBody: {
